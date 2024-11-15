@@ -1,11 +1,15 @@
-import sys
-import yt_dlp
+from flask import Flask, jsonify, request
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import json
-import re
+import time
+import random
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, make_response, request
-import logging
+import re
 
 app = Flask(__name__)
 
@@ -147,6 +151,37 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
+def get_audio_url(video_url):
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument(f"user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    
+    driver = webdriver.Chrome(options=chrome_options)
+    
+    try:
+        driver.get(video_url)
+        time.sleep(random.uniform(2, 5))  # Random delay to mimic human behavior
+        
+        # Wait for the video player to load
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "movie_player"))
+        )
+        
+        # Execute JavaScript to get the audio URL
+        audio_url = driver.execute_script("""
+            var video = document.querySelector('video');
+            return video.src;
+        """)
+        
+        title = driver.title
+        writer = driver.find_element(By.CSS_SELECTOR, "#text > a").text
+        
+        return audio_url, title, writer
+    finally:
+        driver.quit()
+
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')  # Get the video URL from the query parameter
@@ -154,75 +189,25 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = download_audio(video_url)
+    try:
+        audio_url, title, writer = get_audio_url(video_url)
+        
+        title = remove_parentheses(title)
+        writer = remove_parentheses(writer)
+        title = remove_text_before_dash(title)
+        title = remove_writer_from_title(title, writer)
+        title = remove_symbols(title)
 
-    return jsonify(json.loads(result))
+        lyrics = get_lyrics_from_genius(writer, title)
 
-
-def download_audio(video_url):
-    # Create a RequestsCookieJar instance to store cookies
-    cookie_jar = requests.cookies.RequestsCookieJar()
-
-    # Example: Set cookies from the extracted cookie data (using the cookie data you provided)
-    cookies = [
-        {"name": "PREF", "value": "f6=40000000&tz=Asia.Shanghai&f5=30000&f7=100&f4=10000&repeat=NONE&autoplay=false&has_user_changed_default_autoplay_mode=true", "domain": ".youtube.com", "path": "/"},
-        {"name": "wide", "value": "1", "domain": ".youtube.com", "path": "/"},
-        {"name": "GPS", "value": "1", "domain": ".youtube.com", "path": "/"},
-        {"name": "SID", "value": "g.a000qQhH1-KQWTNDfoOJQO0IEFlXtJtbDohfIujySt2MYjoz6kC7LOea_6lfSmFagOKW6MeIUAACgYKAZkSARYSFQHGX2MijPHccmx5wN7kY5g640qpuxoVAUF8yKpDlSoSGVvKNvN2GJdmOmtA0076", "domain": ".youtube.com", "path": "/"},
-        {"name": "HSID", "value": "AY4VEtdfImytmorOI", "domain": ".youtube.com", "path": "/"},
-        # Add all other cookies in a similar way...
-    ]
-
-    # Add the cookies to the cookie jar
-    for cookie in cookies:
-        cookie_jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
-
-    # Additional headers to mimic a real browser session (You can extract these from your browser)
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        # Add any other headers you find in your browser session
-    }
-
-    # Pass cookie_jar and headers to yt-dlp
-    ydl_opts = {
-        'format': 'bestaudio/best',  # Download best available audio
-        'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
-        'cookiejar': cookie_jar,  # Set the cookie jar for yt-dlp
-        'headers': headers,  # Set the headers for yt-dlp
-        'noplaylist': True,  # Ensure it doesn't download the entire playlist
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Extract video information without downloading
-            info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get("url", None)
-            
-            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
-            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
-
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
-
-            lyrics = get_lyrics_from_genius(writer, title)
-
-            if audio_url:
-                return json.dumps({
-                    'audioUrl': audio_url,
-                    'title': title,
-                    'writer': writer,
-                    'lyrics': lyrics
-                })
-            else:
-                return json.dumps({'error': 'Audio URL not found'})
-        except yt_dlp.utils.DownloadError as e:
-            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
-        except Exception as e:
-            return json.dumps({'error': f'General Error: {str(e)}'})
+        return jsonify({
+            'audioUrl': audio_url,
+            'title': title,
+            'writer': writer,
+            'lyrics': lyrics
+        })
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
 
 if __name__ == "__main__":
     fetch_playlists_on_start()
