@@ -4,12 +4,12 @@ import json
 import re
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, make_response, request
+from flask import Flask, jsonify, request
 import logging
 
 app = Flask(__name__)
 
-# Setting up logging
+# Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 @app.after_request
