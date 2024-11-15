@@ -166,7 +166,7 @@ def download_audio(video_url):
         'quiet': True,  # Suppress yt-dlp output
         'geo_bypass': True,  # Bypass geo-restrictions
         'geo_bypass_country': 'PH',  # Set country for geo-bypass
-        'cookiesfrombrowser': ('chrome',),  # Use cookies from Chrome browser
+        'cookiesfrombrowser': ('chrome', {'profile': '/home/Justine Romero/.config/google-chrome/Default'}),
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
