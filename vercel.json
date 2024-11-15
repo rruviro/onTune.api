@@ -6,6 +6,11 @@
         "use": "@vercel/python"
       }
     ],
+    "functions": {
+      "api/index.py": {
+        "regions": ["sfo1", "iad1"]
+      }
+    },
     "routes": [
       {
         "src": "/(.*)",
