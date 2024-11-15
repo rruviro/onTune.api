@@ -6,13 +6,6 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
 import logging
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 app = Flask(__name__)
 
@@ -154,70 +147,55 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-class YoutubeDLPWrapper:
-    def __init__(self):
-        self.ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': '%(id)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': 'in_playlist',
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'logtostderr': False,
-            'no_color': True,
-        }
-
-    def extract_info(self, url):
-        with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-                return info
-            except Exception as e:
-                return {'error': str(e)}
-
-def get_audio_url(video_url):
-    ydl_wrapper = YoutubeDLPWrapper()
-    
-    # Add a random delay to mimic human behavior
-    time.sleep(random.uniform(1, 3))
-    
-    info = ydl_wrapper.extract_info(video_url)
-    
-    if 'error' in info:
-        return json.dumps({'error': info['error']})
-    
-    if 'formats' not in info:
-        return json.dumps({'error': 'No formats found for this video.'})
-    
-    # Find the best audio format
-    audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-    if not audio_formats:
-        return json.dumps({'error': 'No suitable audio format found.'})
-    
-    best_audio = max(audio_formats, key=lambda f: f.get('abr', 0))
-    
-    return json.dumps({
-        'audioUrl': best_audio['url'],
-        'title': info.get('title', 'Unknown Title'),
-        'artist': info.get('artist', info.get('uploader', 'Unknown Artist')),
-    })
-
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
-    video_url = request.args.get('url')
+    video_url = request.args.get('url')  # Get the video URL from the query parameter
 
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = get_audio_url(video_url)
+    result = download_audio(video_url)
 
     return jsonify(json.loads(result))
+
+def download_audio(video_url):
+    ydl_opts = {
+        'format': 'bestaudio/best',  
+        'outtmpl': '/tmp/audio.%(ext)s',  
+        'quiet': True,  
+        'geo_bypass': True,  
+        'geo_bypass_country': 'PH',
+        'cookies': 'api/cookies.txt'
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info_dict = ydl.extract_info(video_url, download=False)
+            audio_url = info_dict.get("url", None)
+            
+            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
+            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
+
+            title = remove_text_before_dash(title)
+            title = remove_writer_from_title(title, writer)
+            title = remove_symbols(title)
+
+            lyrics = get_lyrics_from_genius(writer, title)
+
+            if audio_url:
+                return json.dumps({
+                    'audioUrl': audio_url,
+                    'title': title,
+                    'writer': writer,
+                    'lyrics': lyrics
+                })
+            else:
+                return json.dumps({'error': 'Audio URL not found'})
+        except yt_dlp.utils.DownloadError as e:
+            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+        except Exception as e:
+            return json.dumps({'error': f'General Error: {str(e)}'})
+
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
