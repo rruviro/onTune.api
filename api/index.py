@@ -160,27 +160,32 @@ def get_audio():
 
 def download_audio(video_url):
     ydl_opts = {
-        'format': 'bestaudio/best',  
-        'outtmpl': '/tmp/audio.%(ext)s',  
-        'quiet': True,  
-        'geo_bypass': True,  
-        'geo_bypass_country': 'PH',
-        'cookies': 'api/cookies.txt',
-        'noplaylist': True,  # Ensure we download a single video, not a playlist
+        'format': 'bestaudio/best',  # Download the best audio quality
+        'outtmpl': '/tmp/audio.%(ext)s',  # Output path for the downloaded audio
+        'quiet': True,  # Suppress console output
+        'geo_bypass': True,  # Bypass geo-restrictions
+        'geo_bypass_country': 'PH',  # Use a specific country for geo-bypass
+        'username': 'j1louise.v@gmail.com',  # Your YouTube username
+        'password': 'zeusVdq17!',  # Your YouTube password
+        'noplaylist': True,  # Ensure we're downloading a single video, not a playlist
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
+            # Extract video information without downloading the content
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get("url", None)
             
+            # Clean up title and writer info
             title = remove_parentheses(info_dict.get("title", "Unknown Title"))
             writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
 
+            # Further clean the title
             title = remove_text_before_dash(title)
             title = remove_writer_from_title(title, writer)
             title = remove_symbols(title)
 
+            # Fetch lyrics
             lyrics = get_lyrics_from_genius(writer, title)
 
             if audio_url:
