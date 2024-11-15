@@ -5,14 +5,6 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
-import datetime
-import time
-import urllib.parse
-import uuid
-import yt_dlp
-from yt_dlp.utils import ExtractorError
-from yt_dlp.networking import Request
-from yt_dlp.extractor.youtube import YoutubeBaseInfoExtractor
 import logging
 
 app = Flask(__name__)
@@ -31,7 +23,7 @@ def after_request(response):
 def get_playlist_info(playlist_url):
     ydl_opts = {
         'quiet': True,
-        'extract_flat': True,
+        'extract_flat': True,  # Only fetch playlist info, not the videos
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -155,25 +147,6 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-class YouTubeOAuth2Handler(YoutubeBaseInfoExtractor):
-    _CLIENT_ID = '861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com'
-    _CLIENT_SECRET = 'SboVhoG9s0rNafixCSGGKXAT'
-    _SCOPES = 'http://gdata.youtube.com https://www.googleapis.com/auth/youtube'
-    
-    def set_downloader(self, downloader):
-        super().set_downloader(downloader)
-        # Handle the OAuth2 flow
-
-    def initialize_oauth(self):
-        # This function will handle initializing OAuth2 with your YouTube credentials
-        pass
-    
-    def handle_oauth(self, request: Request):
-        token_data = self.initialize_oauth()
-        # Apply the OAuth2 token to the request headers
-        authorization_header = {'Authorization': f'{token_data["token_type"]} {token_data["access_token"]}'}
-        request.headers.update(authorization_header)
-
 # Flask Route to get audio from YouTube video
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -183,7 +156,7 @@ def get_audio():
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
     result = download_audio(video_url)
-    return jsonify(json.loads(result))
+    return jsonify(result)
 
 # Function to download audio from YouTube
 def download_audio(video_url):
@@ -203,28 +176,25 @@ def download_audio(video_url):
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Initialize OAuth2 handler for requests
-            ydl.extract_info(video_url, download=False)  # We can extract info without downloading
-            # Now, ensure OAuth2 headers are included
+            # Extract video information without downloading
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get("url", None)
 
             title = info_dict.get("title", "Unknown Title")
             writer = info_dict.get("uploader", "Unknown Writer")
 
-            # If OAuth2 is required, apply the OAuth handler logic here
             if audio_url:
-                return json.dumps({
+                return {
                     'audioUrl': audio_url,
                     'title': title,
                     'writer': writer
-                })
+                }
             else:
-                return json.dumps({'error': 'Audio URL not found'})
+                return {'error': 'Audio URL not found'}
         except yt_dlp.utils.DownloadError as e:
-            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+            return {'error': f'YouTube DownloadError: {str(e)}'}
         except Exception as e:
-            return json.dumps({'error': f'General Error: {str(e)}'})
+            return {'error': f'General Error: {str(e)}'}
 
 if __name__ == "__main__":
     fetch_playlists_on_start()
