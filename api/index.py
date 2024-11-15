@@ -166,7 +166,7 @@ def download_audio(video_url):
         'geo_bypass': True,  # Bypass geo-restrictions
         'geo_bypass_country': 'PH',  # Use a specific country for geo-bypass
         'username': 'Justine Romero',  # Your YouTube username
-        'password': 'zeusVdq17!',  # Your YouTube password
+        'password': '',  # Your YouTube password
         'noplaylist': True,  # Ensure we're downloading a single video, not a playlist
     }
 
