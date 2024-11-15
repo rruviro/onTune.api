@@ -19,11 +19,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response
 
-# Function to check if the URL belongs to YouTube or music.youtube
-def is_youtube_url(url):
-    # Check if the URL contains 'youtube' or 'music.youtube'
-    return 'youtube.com' in url or 'music.youtube.com' in url
-
 # Playlist info function
 def get_playlist_info(playlist_url):
     ydl_opts = {
@@ -69,12 +64,6 @@ def playlist_info_endpoint():
 
     if not playlist_urls:
         return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
-
-    # Filter out YouTube or music.youtube URLs
-    playlist_urls = [url for url in playlist_urls if not is_youtube_url(url)]
-
-    if not playlist_urls:
-        return jsonify({'error': 'No valid playlist URLs found'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
@@ -169,52 +158,43 @@ def get_audio():
 
     return jsonify(json.loads(result))
 
-
 def download_audio(video_url):
-    # Create a RequestsCookieJar instance to store cookies
-    cookie_jar = requests.cookies.RequestsCookieJar()
-
-    # Example: Set cookies from the extracted cookie data (using the cookie data you provided)
-    cookies = [
-        {"name": "PREF", "value": "f6=40000000&tz=Asia.Shanghai&f5=30000", "domain": ".youtube.com", "path": "/"},
-        {"name": "wide", "value": "1", "domain": ".youtube.com", "path": "/"},
-        {"name": "GPS", "value": "1", "domain": ".youtube.com", "path": "/"},
-        {"name": "SID", "value": "g.a000qQhH17Hcx4NF8qxGHDbVgSvhQ06pejIv_nBeiRuT4bOL8mLtQKuD1EO54z0U-hsiYrC9KgACgYKAXMSARYSFQHGX2Miqe26lPmqBtxp-WkkFfZPrxoVAUF8yKqYuYfI_uVqdSgbj7Jsn6vI0076", "domain": ".youtube.com", "path": "/"},
-        {"name": "HSID", "value": "Alagvt9Klvs5GNRko", "domain": ".youtube.com", "path": "/"},
-        # Add all other cookies in a similar way...
-    ]
-
-    # Add the cookies to the cookie jar
-    for cookie in cookies:
-        cookie_jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
-
-    # Additional headers to mimic a real browser session (You can extract these from your browser)
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        # Add any other headers you find in your browser session
-    }
-
-    # Pass cookie_jar and headers to yt-dlp
     ydl_opts = {
-        'format': 'bestaudio/best',  # Download best available audio
-        'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
-        'cookiejar': cookie_jar,  # Use the cookies we created
-        'headers': headers,  # Use custom headers
+        'format': 'bestaudio/best',  
+        'outtmpl': '/tmp/audio.%(ext)s',  
+        'quiet': True,  
+        'geo_bypass': True,  
+        'geo_bypass_country': 'PH',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            result = ydl.extract_info(video_url, download=True)
-            audio_file = ydl.prepare_filename(result)  # Get the file path of the downloaded audio
-            return json.dumps({'audio_url': audio_file})
-        except yt_dlp.DownloadError as e:
-            return json.dumps({'error': f"Download error: {str(e)}"})
-        except Exception as e:
-            return json.dumps({'error': f"Error occurred: {str(e)}"})
+            info_dict = ydl.extract_info(video_url, download=False)
+            audio_url = info_dict.get("url", None)
+            
+            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
+            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
 
-if __name__ == '__main__':
-    fetch_playlists_on_start()  # Fetch playlists when the app starts
-    app.run(debug=True)
+            title = remove_text_before_dash(title)
+            title = remove_writer_from_title(title, writer)
+            title = remove_symbols(title)
+
+            lyrics = get_lyrics_from_genius(writer, title)
+
+            if audio_url:
+                return json.dumps({
+                    'audioUrl': audio_url,
+                    'title': title,
+                    'writer': writer,
+                    'lyrics': lyrics
+                })
+            else:
+                return json.dumps({'error': 'Audio URL not found'})
+        except yt_dlp.utils.DownloadError as e:
+            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+        except Exception as e:
+            return json.dumps({'error': f'General Error: {str(e)}'})
+
+if __name__ == "__main__":
+    fetch_playlists_on_start()
+    app.run(debug=True, host='0.0.0.0', port=5000)
