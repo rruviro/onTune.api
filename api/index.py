@@ -165,7 +165,8 @@ def download_audio(video_url):
         'quiet': True,  
         'geo_bypass': True,  
         'geo_bypass_country': 'PH',
-        'cookies': 'api/cookies.txt'
+        'cookies': 'api/cookies.txt',
+        'noplaylist': True,  # Ensure we download a single video, not a playlist
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -191,9 +192,12 @@ def download_audio(video_url):
                 })
             else:
                 return json.dumps({'error': 'Audio URL not found'})
+
         except yt_dlp.utils.DownloadError as e:
+            logging.error(f"YouTube DownloadError: {str(e)}")  # Log the detailed error
             return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
+            logging.error(f"General Error: {str(e)}")  # Log the general error
             return json.dumps({'error': f'General Error: {str(e)}'})
 
 if __name__ == "__main__":
