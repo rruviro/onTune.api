@@ -162,8 +162,8 @@ def get_audio():
 def download_audio(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',  # Download best available audio
-        'outtmpl': '/tmp/audio.%(ext)s',  
-        'cookies': 'api/cookies.txt'
+        'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
+        'cookies': 'api/cookies.txt',  # Path to your cookies.txt file
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -194,7 +194,6 @@ def download_audio(video_url):
             return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
             return json.dumps({'error': f'General Error: {str(e)}'})
-
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
