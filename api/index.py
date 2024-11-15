@@ -163,6 +163,8 @@ def download_audio(video_url):
         'format': 'bestaudio/best',  
         'outtmpl': '/tmp/audio.%(ext)s',  
         'quiet': True,  
+        'geo_bypass': True,  
+        'geo_bypass_country': 'PH',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
