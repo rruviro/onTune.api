@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
 import logging
 import subprocess
+import urllib.parse  # Importing urllib to decode the URL
 
 app = Flask(__name__)
 
@@ -28,7 +29,10 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = download_audio_with_pytube(video_url)
+    # Decode the URL in case it has special characters
+    decoded_url = urllib.parse.unquote(video_url)
+
+    result = download_audio_with_pytube(decoded_url)
     return jsonify(result)
 
 # Function to download audio from YouTube using pytube
