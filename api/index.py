@@ -70,7 +70,9 @@ def playlist_info_endpoint():
         result = get_playlist_info(playlist_url)
         if isinstance(result, dict) and 'songInfo' in result:
             all_songs_info.extend(result['songInfo'])
-
+        else:
+            logging.error(f"Error fetching playlist info for {playlist_url}: {result.get('error', 'Unknown error')}")
+    
     return jsonify({
         'songCount': len(all_songs_info),
         'songInfo': all_songs_info
@@ -93,7 +95,9 @@ def fetch_playlists_on_start():
         result = get_playlist_info(playlist_url)
         if isinstance(result, dict) and 'songInfo' in result:
             all_songs_info.extend(result['songInfo'])
-
+        else:
+            logging.error(f"Error fetching playlist info for {playlist_url}: {result.get('error', 'Unknown error')}")
+    
     logging.info(f"Fetched {len(all_songs_info)} songs.")
     for song in all_songs_info:
         logging.info(json.dumps(song))
@@ -203,13 +207,16 @@ def download_audio(video_url):
                     'lyrics': lyrics
                 })
             else:
-                return json.dumps({'error': 'Audio URL not found'})
+                return json.dumps({'error': 'Audio URL not found.'})
 
         except yt_dlp.utils.DownloadError as e:
-            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+            logging.error(f"DownloadError: {str(e)}")
+            return json.dumps({'error': f"DownloadError: {str(e)}"})
         except Exception as e:
-            return json.dumps({'error': f'General Error: {str(e)}'})
+            logging.error(f"Error downloading audio: {str(e)}")
+            return json.dumps({'error': f"Error: {str(e)}"})
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     fetch_playlists_on_start()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000)
