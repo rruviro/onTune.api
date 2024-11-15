@@ -162,11 +162,7 @@ def get_audio():
 def download_audio(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',  # Download best available audio
-        'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
-        'quiet': True,  # Suppress yt-dlp output
-        'geo_bypass': True,  # Bypass geo-restrictions
-        'geo_bypass_country': 'PH',  # Set country for geo-bypass
-        'cookiesfrombrowser': ('chrome', 'Default'),
+        'outtmpl': '/tmp/audio.%(ext)s',  
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
