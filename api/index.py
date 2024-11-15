@@ -166,6 +166,8 @@ def download_audio(video_url):
         'geo_bypass': True,
         'geo_bypass_country': 'PH',
         'noplaylist': True,
+        'username': 'oauth',  # Use OAuth authentication
+        'password': '',  # No password needed for OAuth
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
