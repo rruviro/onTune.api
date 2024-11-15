@@ -154,44 +154,59 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-def get_audio_url_with_selenium(video_url):
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+class YoutubeDLPWrapper:
+    def __init__(self):
+        self.ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'outtmpl': '%(id)s.%(ext)s',
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': 'in_playlist',
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'no_color': True,
+        }
+
+    def extract_info(self, url):
+        with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+                return info
+            except Exception as e:
+                return {'error': str(e)}
+
+def get_audio_url(video_url):
+    ydl_wrapper = YoutubeDLPWrapper()
     
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    # Add a random delay to mimic human behavior
+    time.sleep(random.uniform(1, 3))
     
-    try:
-        driver.get(video_url)
-        
-        # Wait for the video player to load
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "movie_player"))
-        )
-        
-        # Execute JavaScript to get the audio source
-        audio_src = driver.execute_script("""
-            var video = document.querySelector('video');
-            return video.src;
-        """)
-        
-        if not audio_src:
-            return json.dumps({'error': 'Audio URL not found for this video.'})
-        
-        title = driver.title
-        
-        return json.dumps({
-            'audioUrl': audio_src,
-            'title': title,
-        })
+    info = ydl_wrapper.extract_info(video_url)
     
-    except Exception as e:
-        return json.dumps({'error': f'Error: {str(e)}'})
+    if 'error' in info:
+        return json.dumps({'error': info['error']})
     
-    finally:
-        driver.quit()
+    if 'formats' not in info:
+        return json.dumps({'error': 'No formats found for this video.'})
+    
+    # Find the best audio format
+    audio_formats = [f for f in info['formats'] if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+    if not audio_formats:
+        return json.dumps({'error': 'No suitable audio format found.'})
+    
+    best_audio = max(audio_formats, key=lambda f: f.get('abr', 0))
+    
+    return json.dumps({
+        'audioUrl': best_audio['url'],
+        'title': info.get('title', 'Unknown Title'),
+        'artist': info.get('artist', info.get('uploader', 'Unknown Artist')),
+    })
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -200,10 +215,9 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = get_audio_url_with_selenium(video_url)
+    result = get_audio_url(video_url)
 
     return jsonify(json.loads(result))
-
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
