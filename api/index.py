@@ -3,11 +3,10 @@ import json
 import re
 import requests
 from pytube import YouTube
-from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
 import logging
 import subprocess
-import urllib.parse  # Importing urllib to decode the URL
+import urllib.parse  # For URL decoding
 
 app = Flask(__name__)
 
@@ -32,8 +31,18 @@ def get_audio():
     # Decode the URL in case it has special characters
     decoded_url = urllib.parse.unquote(video_url)
 
-    result = download_audio_with_pytube(decoded_url)
+    # Strip query parameters that could cause issues
+    base_video_url = strip_query_parameters(decoded_url)
+
+    result = download_audio_with_pytube(base_video_url)
     return jsonify(result)
+
+def strip_query_parameters(url):
+    """
+    Strips query parameters from the URL (e.g., list=..., start_radio=...)
+    to avoid issues with pytube.
+    """
+    return url.split('?')[0]
 
 # Function to download audio from YouTube using pytube
 def download_audio_with_pytube(video_url):
