@@ -147,26 +147,21 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-@app.route('/get-audio', methods=['GET'])
-def get_audio():
-    video_url = request.args.get('url')  # Get the video URL from the query parameter
-
-    if not video_url:
-        return jsonify({'error': 'Missing video URL parameter'}), 400
-
-    result = download_audio(video_url)
-
-    return jsonify(json.loads(result))
-
 def download_audio(video_url):
     ydl_opts = {
-        'format': 'bestaudio/best',  
-        'outtmpl': '/tmp/audio.%(ext)s',  
-        'quiet': True,  
-        'geo_bypass': True,  
+        'format': 'bestaudio/best',
+        'outtmpl': '/tmp/audio.%(ext)s',
+        'quiet': True,
+        'geo_bypass': True,
         'extract_flat': True,
         'geo_bypass_country': 'PH',
-        'cookies': 'api/cookies.txt'
+        'cookies': 'api/cookies.txt',
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
+        'no_warnings': True,
+        'default_search': 'auto',
+        'source_address': '0.0.0.0'
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -195,10 +190,24 @@ def download_audio(video_url):
             })
 
         except yt_dlp.utils.DownloadError as e:
-            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+            error_message = str(e)
+            if "Sign in to confirm you're not a bot" in error_message:
+                return json.dumps({'error': 'YouTube is requesting authentication. Please ensure you are using valid cookies.'})
+            else:
+                return json.dumps({'error': f'YouTube DownloadError: {error_message}'})
         except Exception as e:
             return json.dumps({'error': f'General Error: {str(e)}'})
 
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')
+
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    result = download_audio(video_url)
+
+    return jsonify(json.loads(result))
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
