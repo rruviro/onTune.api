@@ -176,11 +176,11 @@ def download_audio(video_url):
 
     # Example: Set cookies from the extracted cookie data (using the cookie data you provided)
     cookies = [
-        {"name": "PREF", "value": "f6=40000000&tz=Asia.Shanghai&f5=30000&f7=100&f4=10000&repeat=NONE&autoplay=false&has_user_changed_default_autoplay_mode=true", "domain": ".youtube.com", "path": "/"},
+        {"name": "PREF", "value": "f6=40000000&tz=Asia.Shanghai&f5=30000", "domain": ".youtube.com", "path": "/"},
         {"name": "wide", "value": "1", "domain": ".youtube.com", "path": "/"},
         {"name": "GPS", "value": "1", "domain": ".youtube.com", "path": "/"},
-        {"name": "SID", "value": "g.a000qQhH1-KQWTNDfoOJQO0IEFlXtJtbDohfIujySt2MYjoz6kC7LOea_6lfSmFagOKW6MeIUAACgYKAZkSARYSFQHGX2MijPHccmx5wN7kY5g640qpuxoVAUF8yKpDlSoSGVvKNvN2GJdmOmtA0076", "domain": ".youtube.com", "path": "/"},
-        {"name": "HSID", "value": "AY4VEtdfImytmorOI", "domain": ".youtube.com", "path": "/"},
+        {"name": "SID", "value": "g.a000qQhH17Hcx4NF8qxGHDbVgSvhQ06pejIv_nBeiRuT4bOL8mLtQKuD1EO54z0U-hsiYrC9KgACgYKAXMSARYSFQHGX2Miqe26lPmqBtxp-WkkFfZPrxoVAUF8yKqYuYfI_uVqdSgbj7Jsn6vI0076", "domain": ".youtube.com", "path": "/"},
+        {"name": "HSID", "value": "Alagvt9Klvs5GNRko", "domain": ".youtube.com", "path": "/"},
         # Add all other cookies in a similar way...
     ]
 
