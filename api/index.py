@@ -1,4 +1,4 @@
-import sys
+import os
 import yt_dlp
 import json
 import re
@@ -147,6 +147,7 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
+
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')  # Get the video URL from the query parameter
@@ -154,33 +155,39 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = download_audio(video_url)
+    try:
+        result = download_audio(video_url)
+        return jsonify(json.loads(result))
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
-    return jsonify(json.loads(result))
 
 def download_audio(video_url):
+    cookies_path = 'api/cookies.txt'
+
+    # Ensure cookies file exists
+    if not os.path.exists(cookies_path):
+        return json.dumps({'error': 'Cookies file not found. Please ensure cookies.txt is available.'})
+
     ydl_opts = {
-        'format': 'bestaudio/best',  
-        'outtmpl': '/tmp/audio.%(ext)s',  
-        'quiet': True,  
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-        'geo_bypass': True,  
-        'geo_bypass_country': 'PH',
         'format': 'bestaudio/best',
-        'cookies': 'api/cookies.txt'
+        'outtmpl': '/tmp/audio.%(ext)s',
+        'quiet': False,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+        'geo_bypass': True,
+        'geo_bypass_country': 'PH',
+        'cookies': cookies_path
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get("url", None)
-            
+            audio_url = info_dict.get("url")
+
             title = remove_parentheses(info_dict.get("title", "Unknown Title"))
             writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
 
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
+            title = clean_title(title, writer)
 
             lyrics = get_lyrics_from_genius(writer, title)
 
@@ -193,6 +200,7 @@ def download_audio(video_url):
                 })
             else:
                 return json.dumps({'error': 'Audio URL not found'})
+
         except yt_dlp.utils.DownloadError as e:
             return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
