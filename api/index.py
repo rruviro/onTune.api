@@ -6,6 +6,13 @@ import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
 import logging
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 app = Flask(__name__)
 
@@ -147,56 +154,44 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-def download_audio(video_url):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': '/tmp/audio.%(ext)s',
-        'quiet': True,
-        'geo_bypass': True,
-        'extract_flat': True,
-        'geo_bypass_country': 'PH',
-        'cookies': 'api/cookies.txt',
-        'nocheckcertificate': True,
-        'ignoreerrors': False,
-        'logtostderr': False,
-        'no_warnings': True,
-        'default_search': 'auto',
-        'source_address': '0.0.0.0'
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info_dict = ydl.extract_info(video_url, download=False)
-
-            # Ensure 'url' is in the extracted info
-            audio_url = info_dict.get("url", None)
-            if not audio_url:
-                return json.dumps({'error': 'Audio URL not found for this video.'})
-
-            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
-            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
-
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
-
-            lyrics = get_lyrics_from_genius(writer, title)
-
-            return json.dumps({
-                'audioUrl': audio_url,
-                'title': title,
-                'writer': writer,
-                'lyrics': lyrics
-            })
-
-        except yt_dlp.utils.DownloadError as e:
-            error_message = str(e)
-            if "Sign in to confirm you're not a bot" in error_message:
-                return json.dumps({'error': 'YouTube is requesting authentication. Please ensure you are using valid cookies.'})
-            else:
-                return json.dumps({'error': f'YouTube DownloadError: {error_message}'})
-        except Exception as e:
-            return json.dumps({'error': f'General Error: {str(e)}'})
+def get_audio_url_with_selenium(video_url):
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    
+    try:
+        driver.get(video_url)
+        
+        # Wait for the video player to load
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "movie_player"))
+        )
+        
+        # Execute JavaScript to get the audio source
+        audio_src = driver.execute_script("""
+            var video = document.querySelector('video');
+            return video.src;
+        """)
+        
+        if not audio_src:
+            return json.dumps({'error': 'Audio URL not found for this video.'})
+        
+        title = driver.title
+        
+        return json.dumps({
+            'audioUrl': audio_src,
+            'title': title,
+        })
+    
+    except Exception as e:
+        return json.dumps({'error': f'Error: {str(e)}'})
+    
+    finally:
+        driver.quit()
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -205,9 +200,10 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = download_audio(video_url)
+    result = get_audio_url_with_selenium(video_url)
 
     return jsonify(json.loads(result))
+
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
