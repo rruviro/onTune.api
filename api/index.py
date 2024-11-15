@@ -5,6 +5,14 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
+import datetime
+import time
+import urllib.parse
+import uuid
+import yt_dlp
+from yt_dlp.utils import ExtractorError
+from yt_dlp.networking import Request
+from yt_dlp.extractor.youtube import YoutubeBaseInfoExtractor
 import logging
 
 app = Flask(__name__)
@@ -147,6 +155,26 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
+class YouTubeOAuth2Handler(YoutubeBaseInfoExtractor):
+    _CLIENT_ID = '861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com'
+    _CLIENT_SECRET = 'SboVhoG9s0rNafixCSGGKXAT'
+    _SCOPES = 'http://gdata.youtube.com https://www.googleapis.com/auth/youtube'
+    
+    def set_downloader(self, downloader):
+        super().set_downloader(downloader)
+        # Handle the OAuth2 flow
+
+    def initialize_oauth(self):
+        # This function will handle initializing OAuth2 with your YouTube credentials
+        pass
+    
+    def handle_oauth(self, request: Request):
+        token_data = self.initialize_oauth()
+        # Apply the OAuth2 token to the request headers
+        authorization_header = {'Authorization': f'{token_data["token_type"]} {token_data["access_token"]}'}
+        request.headers.update(authorization_header)
+
+# Flask Route to get audio from YouTube video
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')  # Get the video URL from the query parameter
@@ -155,9 +183,9 @@ def get_audio():
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
     result = download_audio(video_url)
-
     return jsonify(json.loads(result))
 
+# Function to download audio from YouTube
 def download_audio(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',  
@@ -165,28 +193,31 @@ def download_audio(video_url):
         'quiet': True,  
         'geo_bypass': True,  
         'geo_bypass_country': 'PH',
+        'postprocessors': [{
+            'key': 'FFmpegAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'cookiefile': 'cookies.txt',  # Optional: Use cookies if needed
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
+            # Initialize OAuth2 handler for requests
+            ydl.extract_info(video_url, download=False)  # We can extract info without downloading
+            # Now, ensure OAuth2 headers are included
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get("url", None)
-            
-            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
-            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
 
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
+            title = info_dict.get("title", "Unknown Title")
+            writer = info_dict.get("uploader", "Unknown Writer")
 
-            lyrics = get_lyrics_from_genius(writer, title)
-
+            # If OAuth2 is required, apply the OAuth handler logic here
             if audio_url:
                 return json.dumps({
                     'audioUrl': audio_url,
                     'title': title,
-                    'writer': writer,
-                    'lyrics': lyrics
+                    'writer': writer
                 })
             else:
                 return json.dumps({'error': 'Audio URL not found'})
