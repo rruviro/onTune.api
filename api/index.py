@@ -163,6 +163,7 @@ def download_audio(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',  # Download best available audio
         'outtmpl': '/tmp/audio.%(ext)s',  
+        'cookies': 'cookies.txt'
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
