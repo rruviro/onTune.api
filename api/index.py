@@ -160,10 +160,28 @@ def get_audio():
 
 
 def download_audio(video_url):
+    # Create a RequestsCookieJar instance to store cookies
+    cookie_jar = requests.cookies.RequestsCookieJar()
+
+    # Example: Set cookies from the extracted cookie data (using the cookie data you provided)
+    cookies = [
+        {"name": "PREF", "value": "f6=40000000&tz=Asia.Shanghai&f5=30000&f7=100&f4=10000&repeat=NONE&autoplay=false&has_user_changed_default_autoplay_mode=true", "domain": ".youtube.com", "path": "/"},
+        {"name": "wide", "value": "1", "domain": ".youtube.com", "path": "/"},
+        {"name": "GPS", "value": "1", "domain": ".youtube.com", "path": "/"},
+        {"name": "SID", "value": "g.a000qQhH1-KQWTNDfoOJQO0IEFlXtJtbDohfIujySt2MYjoz6kC7LOea_6lfSmFagOKW6MeIUAACgYKAZkSARYSFQHGX2MijPHccmx5wN7kY5g640qpuxoVAUF8yKpDlSoSGVvKNvN2GJdmOmtA0076", "domain": ".youtube.com", "path": "/"},
+        {"name": "HSID", "value": "AY4VEtdfImytmorOI", "domain": ".youtube.com", "path": "/"},
+        # Add all other cookies in a similar way...
+    ]
+
+    # Add the cookies to the cookie jar
+    for cookie in cookies:
+        cookie_jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
+
+    # Pass cookie_jar to yt-dlp
     ydl_opts = {
         'format': 'bestaudio/best',  # Download best available audio
         'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
-        'cookies': 'api/cookies.txt',  # Path to your cookies.txt file
+        'cookiejar': cookie_jar,  # Set the cookie jar for yt-dlp
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
