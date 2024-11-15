@@ -1,0 +1,10 @@
+# Netscape HTTP Cookie File
+# This is a generated file! Do not edit.
+
+.youtube.com   TRUE   /   FALSE   1699999999   VISITOR_INFO1_LIVE   abc123xyz
+.youtube.com   TRUE   /   FALSE   1699999999   PREF   f6=400
+.youtube.com   TRUE   /   FALSE   1699999999   YSC   A1b2C3d4E5
+.youtube.com   TRUE   /   FALSE   1699999999   LOGIN_INFO   AFmmF2gwRq
+.youtube.com   TRUE   /   FALSE   1699999999   SID   QQmmMm12345-abcde
+.youtube.com   TRUE   /   FALSE   1699999999   HSID   AaBbCcDdEe
+.youtube.com   TRUE   /   FALSE   1699999999   SSID   FfGgHhIiJj
