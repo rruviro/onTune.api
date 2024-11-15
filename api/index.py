@@ -177,11 +177,22 @@ def download_audio(video_url):
     for cookie in cookies:
         cookie_jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
 
-    # Pass cookie_jar to yt-dlp
+    # Additional headers to mimic a real browser session (You can extract these from your browser)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        # Add any other headers you find in your browser session
+    }
+
+    # Pass cookie_jar and headers to yt-dlp
     ydl_opts = {
         'format': 'bestaudio/best',  # Download best available audio
         'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
         'cookiejar': cookie_jar,  # Set the cookie jar for yt-dlp
+        'headers': headers,  # Set the headers for yt-dlp
+        'noplaylist': True,  # Ensure it doesn't download the entire playlist
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -212,6 +223,7 @@ def download_audio(video_url):
             return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
             return json.dumps({'error': f'General Error: {str(e)}'})
+
 if __name__ == "__main__":
     fetch_playlists_on_start()
     app.run(debug=True, host='0.0.0.0', port=5000)
