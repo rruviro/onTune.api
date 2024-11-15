@@ -158,34 +158,30 @@ def get_audio():
 
     return jsonify(json.loads(result))
 
+
 def download_audio(video_url):
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': '/tmp/audio.%(ext)s',
-        'quiet': True,
-        'geo_bypass': True,
-        'geo_bypass_country': 'PH',
-        'noplaylist': True,
-        'username': 'oauth',  # Use OAuth authentication
-        'password': '',  # No password needed for OAuth
+        'format': 'bestaudio/best',  # Download best available audio
+        'outtmpl': '/tmp/audio.%(ext)s',  # Temporary file path
+        'quiet': True,  # Suppress yt-dlp output
+        'geo_bypass': True,  # Bypass geo-restrictions
+        'geo_bypass_country': 'PH',  # Set country for geo-bypass
+        'cookiesfrombrowser': ('chrome',),  # Use cookies from Chrome browser
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            # Extract video information without downloading the content
+            # Extract video information without downloading
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get("url", None)
             
-            # Clean up title and writer info
             title = remove_parentheses(info_dict.get("title", "Unknown Title"))
             writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
 
-            # Further clean the title
             title = remove_text_before_dash(title)
             title = remove_writer_from_title(title, writer)
             title = remove_symbols(title)
 
-            # Fetch lyrics
             lyrics = get_lyrics_from_genius(writer, title)
 
             if audio_url:
@@ -197,12 +193,9 @@ def download_audio(video_url):
                 })
             else:
                 return json.dumps({'error': 'Audio URL not found'})
-
         except yt_dlp.utils.DownloadError as e:
-            logging.error(f"YouTube DownloadError: {str(e)}")  # Log the detailed error
             return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
-            logging.error(f"General Error: {str(e)}")  # Log the general error
             return json.dumps({'error': f'General Error: {str(e)}'})
 
 if __name__ == "__main__":
