@@ -163,8 +163,10 @@ def download_audio(video_url):
         'format': 'bestaudio/best',  
         'outtmpl': '/tmp/audio.%(ext)s',  
         'quiet': True,  
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
         'geo_bypass': True,  
         'geo_bypass_country': 'PH',
+        'format': 'bestaudio/best',
         'cookies': 'api/cookies.txt'
     }
 
