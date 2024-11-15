@@ -176,7 +176,11 @@ def download_audio(video_url):
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
         'geo_bypass': True,
         'geo_bypass_country': 'PH',
-        'cookies': cookies_path
+        'cookies': cookies_path,
+        'retries': 3,  # Retry on failure
+        'sleep_interval': 5,  # Delay between retries
+        'wait_for_video': True,  # Wait until the video is available for download
+        'noplaylist': True  # Avoid downloading playlists, just the video
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
