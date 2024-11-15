@@ -5,8 +5,12 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, make_response, request
+import logging
 
 app = Flask(__name__)
+
+# Setting up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 @app.after_request
 def after_request(response):
@@ -14,6 +18,85 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response
+
+# Playlist info function
+def get_playlist_info(playlist_url):
+    ydl_opts = {
+        'quiet': True,
+        'extract_flat': True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            playlist_info = ydl.extract_info(playlist_url, download=False)
+            if 'entries' in playlist_info:
+                song_info = [
+                    {
+                        'title': entry['title'],
+                        'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
+                        'url': f"https://www.youtube.com/watch?v={entry['id']}",
+                        'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),
+                        'playlistUrl': playlist_url
+                    } for entry in playlist_info['entries']
+                ]
+                
+                return {
+                    'songCount': len(song_info),
+                    'songInfo': song_info
+                }
+            else:
+                return {'error': 'No entries found in the playlist'}
+        except yt_dlp.utils.DownloadError as e:
+            logging.error(f"DownloadError: {str(e)}")
+            return {'error': f"DownloadError: {str(e)}"}
+        except Exception as e:
+            logging.error(f"Error fetching playlist info: {str(e)}")
+            return {'error': f"Error: {str(e)}"}
+
+@app.route('/get_playlist_info', methods=['GET'])
+def playlist_info_endpoint():
+    try:
+        with open('api/links.txt', 'r') as file:
+            playlist_urls = [line.strip() for line in file.readlines()]
+    except Exception as e:
+        logging.error(f"Failed to read api/links.txt: {str(e)}")
+        return jsonify({'error': f'Failed to read api/links.txt: {str(e)}'}), 500
+
+    if not playlist_urls:
+        return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
+
+    all_songs_info = []
+    for playlist_url in playlist_urls:
+        result = get_playlist_info(playlist_url)
+        if isinstance(result, dict) and 'songInfo' in result:
+            all_songs_info.extend(result['songInfo'])
+
+    return jsonify({
+        'songCount': len(all_songs_info),
+        'songInfo': all_songs_info
+    })
+
+def fetch_playlists_on_start():
+    try:
+        with open('api/links.txt', 'r') as file:
+            playlist_urls = [line.strip() for line in file.readlines()]
+    except Exception as e:
+        logging.error(f"Failed to read api/links.txt: {str(e)}")
+        return
+
+    if not playlist_urls:
+        logging.error("No playlist URLs found in api/links.txt")
+        return
+
+    all_songs_info = []
+    for playlist_url in playlist_urls:
+        result = get_playlist_info(playlist_url)
+        if isinstance(result, dict) and 'songInfo' in result:
+            all_songs_info.extend(result['songInfo'])
+
+    logging.info(f"Fetched {len(all_songs_info)} songs.")
+    for song in all_songs_info:
+        logging.info(json.dumps(song))
 
 # Helper functions for cleaning and fetching data
 def remove_parentheses(text):
@@ -64,6 +147,17 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')  # Get the video URL from the query parameter
+
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    result = download_audio(video_url)
+
+    return jsonify(json.loads(result))
+
 def download_audio(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',  
@@ -94,94 +188,10 @@ def download_audio(video_url):
                 })
             else:
                 return json.dumps({'error': 'Audio URL not found'})
+        except yt_dlp.utils.DownloadError as e:
+            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
         except Exception as e:
-            return json.dumps({'error': str(e)})
-
-# Playlist info function
-def get_playlist_info(playlist_url):
-    ydl_opts = {
-        'quiet': True,
-        'extract_flat': True,
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            playlist_info = ydl.extract_info(playlist_url, download=False)
-
-            if 'entries' in playlist_info:
-                song_info = [
-                    {
-                        'title': entry['title'],
-                        'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
-                        'url': f"https://www.youtube.com/watch?v={entry['id']}",
-                        'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),
-                        'playlistUrl': playlist_url
-                    } for entry in playlist_info['entries']
-                ]
-                
-                return {
-                    'songCount': len(song_info),
-                    'songInfo': song_info
-                }
-            else:
-                return {'error': 'No entries found in the playlist'}
-        except Exception as e:
-            return {'error': str(e)}
-
-@app.route('/get_playlist_info', methods=['GET'])
-def playlist_info_endpoint():
-    try:
-        with open('api/links.txt', 'r') as file:
-            playlist_urls = [line.strip() for line in file.readlines()]
-    except Exception as e:
-        return jsonify({'error': f'Failed to read list.txt: {str(e)}'}), 500
-
-    if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in list.txt'}), 400
-
-    all_songs_info = []
-    for playlist_url in playlist_urls:
-        result = get_playlist_info(playlist_url)
-        if isinstance(result, dict) and 'songInfo' in result:
-            all_songs_info.extend(result['songInfo'])
-
-    return jsonify({
-        'songCount': len(all_songs_info),
-        'songInfo': all_songs_info
-    })
-
-@app.route('/get-audio', methods=['GET'])
-def get_audio():
-    video_url = request.args.get('url')  # Get the video URL from the query parameter
-
-    if not video_url:
-        return jsonify({'error': 'Missing video URL parameter'}), 400
-
-    result = download_audio(video_url)
-
-    return jsonify(json.loads(result))
-
-def fetch_playlists_on_start():
-    try:
-        with open('api/links.txt', 'r') as file:
-            playlist_urls = [line.strip() for line in file.readlines()]
-    except Exception as e:
-        print(f"Failed to read list.txt: {str(e)}")
-        return
-
-    if not playlist_urls:
-        print("No playlist URLs found in list.txt")
-        return
-
-    all_songs_info = []
-    for playlist_url in playlist_urls:
-        result = get_playlist_info(playlist_url)
-        if isinstance(result, dict) and 'songInfo' in result:
-            all_songs_info.extend(result['songInfo'])
-
-    print(f"Fetched {len(all_songs_info)} songs.")
-    for song in all_songs_info:
-        print(json.dumps(song))
+            return json.dumps({'error': f'General Error: {str(e)}'})
 
 if __name__ == "__main__":
     fetch_playlists_on_start()
