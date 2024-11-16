@@ -105,6 +105,13 @@ YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
 YOUTUBE_API_SERVICE_NAME = "youtube"
 YOUTUBE_API_VERSION = "v3"
 
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    return response
+
 def validate_youtube_url(video_url):
     """Validates the YouTube video URL using the YouTube Data API."""
     try:
@@ -116,7 +123,6 @@ def validate_youtube_url(video_url):
         video_id = video_id[0]
 
         # Use the YouTube Data API
-        youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=YOUTUBE_API_KEY)
         response = youtube.videos().list(part="id,snippet", id=video_id).execute()
 
         if "items" not in response or len(response["items"]) == 0:
@@ -125,7 +131,6 @@ def validate_youtube_url(video_url):
         return video_id, None
     except Exception as e:
         return None, f"Error validating URL: {e}"
-
 
 def fetch_audio_url(video_url):
     """Fetches the direct audio stream URL using yt-dlp."""
@@ -141,7 +146,6 @@ def fetch_audio_url(video_url):
             return audio_url, None
     except Exception as e:
         return None, str(e)
-
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
