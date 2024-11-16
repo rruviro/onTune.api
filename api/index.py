@@ -1,10 +1,18 @@
 from flask import Flask, jsonify, request
 import logging
 import urllib.parse
-import yt_dlp
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import os
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
+
+# Use the environment variable
+API_KEY = os.environ.get('AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg')
+
+# Only build the YouTube client if API_KEY is available
+youtube = build('youtube', 'v3', developerKey=API_KEY) if API_KEY else None
 
 @app.after_request
 def after_request(response):
@@ -15,67 +23,57 @@ def after_request(response):
 
 @app.route('/get-audio-info', methods=['GET'])
 def get_audio_info():
+    if not youtube:
+        return jsonify({'error': 'YouTube API key not configured'}), 500
+
     try:
         video_url = request.args.get('url')
         if not video_url:
             return jsonify({'error': 'Missing video URL parameter'}), 400
 
-        # Clean and validate the URL
-        decoded_url = urllib.parse.unquote(video_url)
-        if 'youtube.com/watch?v=' not in decoded_url and 'youtu.be/' not in decoded_url and 'music.youtube.com' not in decoded_url:
+        video_id = extract_video_id(video_url)
+        if not video_id:
             return jsonify({'error': 'Invalid YouTube URL'}), 400
 
-        return extract_audio_info(decoded_url)
+        return fetch_video_info(video_id)
     except Exception as e:
         logging.error(f"Error in get_audio_info: {str(e)}")
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
-def extract_audio_info(video_url):
+def extract_video_id(url):
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.hostname in ('youtu.be', 'www.youtu.be'):
+        return parsed_url.path[1:]
+    if parsed_url.hostname in ('youtube.com', 'www.youtube.com', 'music.youtube.com'):
+        if 'v' in urllib.parse.parse_qs(parsed_url.query):
+            return urllib.parse.parse_qs(parsed_url.query)['v'][0]
+    return None
+
+def fetch_video_info(video_id):
     try:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'no_warnings': True,
-            'quiet': True,
-        }
+        response = youtube.videos().list(
+            part='snippet,contentDetails',
+            id=video_id
+        ).execute()
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            if info is None:
-                return jsonify({'error': 'Unable to extract video information'}), 400
+        if not response['items']:
+            return jsonify({'error': 'Video not found'}), 404
 
-            if 'entries' in info:
-                # It's a playlist or a channel, we'll just use the first video
-                video = info['entries'][0]
-            else:
-                video = info
+        video_info = response['items'][0]
+        snippet = video_info['snippet']
+        content_details = video_info['contentDetails']
 
-            if video.get('is_live'):
-                return jsonify({'error': 'Live videos are not supported'}), 400
+        return jsonify({
+            'title': snippet['title'],
+            'uploader': snippet['channelTitle'],
+            'duration': content_details['duration'],
+            'thumbnail': snippet['thumbnails']['high']['url'],
+            'description': snippet['description']
+        })
 
-            if video.get('age_limit', 0) > 0:
-                return jsonify({'error': 'Age-restricted videos are not supported'}), 400
-
-            audio_formats = [f for f in video['formats'] if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-            best_audio = max(audio_formats, key=lambda f: f.get('abr', 0))
-
-            return jsonify({
-                'title': video['title'],
-                'uploader': video.get('uploader', 'Unknown'),
-                'duration': video.get('duration'),
-                'audioUrl': best_audio['url'],
-                'format': best_audio['format'],
-                'acodec': best_audio['acodec'],
-                'abr': best_audio.get('abr')
-            })
-
-    except yt_dlp.utils.DownloadError as e:
-        logging.error(f"yt-dlp error: {str(e)}")
-        return jsonify({'error': f'Video info extraction failed: {str(e)}'}), 400
-    except Exception as e:
-        logging.error(f"Error in extract_audio_info: {str(e)}")
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+    except HttpError as e:
+        logging.error(f"YouTube API error: {str(e)}")
+        return jsonify({'error': f'YouTube API error: {str(e)}'}), 400
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
