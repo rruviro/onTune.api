@@ -9,7 +9,6 @@ import urllib.parse
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
-from pytube import YouTube
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -214,7 +213,7 @@ def download_video():
             return jsonify({"error": "No URL provided"}), 400
 
         # Create YouTube object with the provided URL
-        yt = YouTube(video_url)
+        yt = youtube(video_url)
 
         # Choose the highest resolution stream available
         stream = yt.streams.get_highest_resolution()
