@@ -158,7 +158,7 @@ def fetch_video_metadata(video_id):
 
 def download_audio(video_url):
     """Fetch video metadata from the YouTube Data API."""
-    api_key = "YOUR_YOUTUBE_API_KEY"
+    api_key = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
     youtube = build("youtube", "v3", developerKey=api_key)
 
     video_id = extract_video_id(video_url)  # Ensure you have the correct function to extract the video ID
