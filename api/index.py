@@ -50,7 +50,7 @@ def get_playlist_info(playlist_id):
             song_info.append({
                 'title': video['title'],
                 'writer': video['videoOwnerChannelTitle'],
-                'url': f"https://www.youtube.com/watch?v={video['resourceId']['videoId']}",
+                'url': f"https://www.youtube.com/embed/{video['resourceId']['videoId']}?autoplay=1&mute=0",  # Updated URL format
                 'image_url': video['thumbnails']['high']['url'],
             })
 
