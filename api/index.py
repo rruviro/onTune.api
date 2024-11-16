@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 import yt_dlp
 import urllib.parse
 from pydub import AudioSegment
-import youtube_dl
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
@@ -158,14 +157,36 @@ def fetch_video_metadata(video_id):
         return None
 
 def download_audio(video_url):
-    """Download audio from YouTube using youtube-dl."""
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'noplaylist': True,
-    }
+    """Fetch video metadata from the YouTube Data API."""
+    api_key = "YOUR_YOUTUBE_API_KEY"
+    youtube = build("youtube", "v3", developerKey=api_key)
+
+    video_id = extract_video_id(video_url)  # Ensure you have the correct function to extract the video ID
 
     try:
+        # Request video metadata using the YouTube Data API
+        video_response = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=video_id
+        ).execute()
+
+        if not video_response['items']:
+            return {'error': 'Video not found'}
+
+        snippet = video_response['items'][0]['snippet']
+        content_details = video_response['items'][0]['contentDetails']
+
+        title = snippet['title']
+        uploader = snippet['channelTitle']
+        duration = content_details['duration']
+
+        # Now fetch the direct audio URL from yt-dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'quiet': True,
+            'noplaylist': True,
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get('url', None)
@@ -173,17 +194,19 @@ def download_audio(video_url):
             if not audio_url:
                 return {'error': 'Failed to extract audio URL.'}
 
-            title = info_dict.get('title', "Unknown Title")
-            uploader = info_dict.get('uploader', "Unknown Uploader")
+            # Clean title and uploader (you can use the clean_title_and_writer function here)
+            title, uploader = clean_title_and_writer(title, uploader)
 
             return {
                 'audioUrl': audio_url,
                 'title': title,
-                'uploader': uploader
+                'uploader': uploader,
+                'duration': duration
             }
 
     except Exception as e:
-        return {'error': f'Error: {str(e)}'}
+        return {'error': f'Error fetching metadata: {str(e)}'}
+    
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')
