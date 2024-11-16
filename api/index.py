@@ -103,7 +103,6 @@ def playlist_info_endpoint():
 # Your YouTube API key
 YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
 
-
 def remove_parentheses(text):
     """Removes any text within parentheses from a string."""
     return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
@@ -172,11 +171,16 @@ def fetch_audio_stream(video_url):
         'quiet': True,
     }
     try:
+        # Extracting info using yt-dlp
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get("url", None)
-            return audio_url
+            if 'url' in info_dict:
+                audio_url = info_dict['url']
+                return audio_url
+            else:
+                raise ValueError("Audio stream URL not found")
     except Exception as e:
+        print(f"Error fetching audio stream: {e}")  # Log the error for debugging
         return None
 
 @app.route('/get-audio', methods=['GET'])
@@ -185,21 +189,28 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
+    # Fetch video metadata
     video_metadata = fetch_video_metadata(video_url)
     if "error" in video_metadata:
         return jsonify({'error': video_metadata['error']}), 500
 
+    # Clean and process the video title
     title = remove_parentheses(video_metadata["title"])
     writer = remove_parentheses(video_metadata["uploader"])
     title = remove_text_before_dash(title)
     title = remove_writer_from_title(title, writer)
     title = remove_symbols(title)
+
+    # Fetch lyrics from Genius
     lyrics = get_lyrics_from_genius(writer, title)
+
+    # Fetch audio stream URL
     audio_stream_url = fetch_audio_stream(video_url)
 
     if not audio_stream_url:
         return jsonify({'error': 'Failed to fetch audio stream'}), 500
 
+    # Return response with the required data
     return jsonify({
         "title": title,
         "writer": writer,
