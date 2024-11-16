@@ -128,18 +128,24 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
+    print(f"Received video URL: {video_url}")
     video_id = extract_video_id(video_url)
+    print(f"Extracted Video ID: {video_id}")
+    
     if not video_id:
         return jsonify({'error': 'Invalid YouTube URL'}), 400
 
     try:
         video_metadata = fetch_video_metadata(video_id)
+        print(f"Video Metadata: {video_metadata}")
         if not video_metadata:
             return jsonify({'error': 'Failed to retrieve video metadata'}), 500
 
         audio_info = get_audio_info(video_id, video_metadata)
+        print(f"Audio Info: {audio_info}")
         return jsonify(audio_info)
     except Exception as e:
+        print(f"Error: {str(e)}")
         return jsonify({'error': f'Error processing request: {str(e)}'}), 500
 
 def extract_video_id(url):
