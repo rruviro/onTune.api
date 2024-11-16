@@ -195,32 +195,41 @@ def get_audio_info(video_id, metadata):
         'duration': metadata['duration']
     }
 
-@app.route('/convert', methods=['GET', 'POST'])
-def convert_youtube_to_mp3():
-    if request.method == 'POST':
-        youtube_url = request.json.get('url')
-    else:
-        youtube_url = request.args.get('url')  # Get URL from query parameter
+@app.route('/video-details', methods=['GET'])
+def get_video_details():
+    # Get video URL from the query parameter
+    video_url = request.args.get('url')
 
-    if not youtube_url:
+    if not video_url:
         return jsonify({'error': 'No URL provided'}), 400
 
-    # yt-dlp options
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegAudio',  # Corrected key
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'outtmpl': 'downloads/%(id)s.%(ext)s',
-    }
+    # Extract the video ID from the URL (assuming standard YouTube URL)
+    video_id = video_url.split("v=")[1].split("&")[0]
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(youtube_url, download=False)
-            mp3_url = f"downloads/{info_dict['id']}.mp3"
-            return jsonify({'mp3Url': mp3_url}), 200
+        # Fetch video details from the YouTube API
+        request = youtube.videos().list(
+            part='snippet,contentDetails,statistics',
+            id=video_id
+        )
+        response = request.execute()
+
+        if not response['items']:
+            return jsonify({'error': 'Video not found'}), 404
+
+        video_info = response['items'][0]
+
+        # Prepare the metadata response
+        video_data = {
+            'title': video_info['snippet']['title'],
+            'description': video_info['snippet']['description'],
+            'duration': video_info['contentDetails']['duration'],
+            'views': video_info['statistics']['viewCount'],
+            'thumbnail': video_info['snippet']['thumbnails']['high']['url']
+        }
+
+        return jsonify(video_data), 200
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
