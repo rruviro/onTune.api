@@ -123,7 +123,6 @@ def clean_title_and_writer(title, writer):
 
     return title, writer
 
-
 def extract_video_id(url):
     """Extract the video ID from a YouTube URL."""
     from urllib.parse import urlparse, parse_qs
@@ -166,17 +165,19 @@ def download_audio(video_url):
         'outtmpl': '/tmp/audio.%(ext)s',
         'quiet': False,
         'geo_bypass': True,
-        'verbose': True,  # Enable verbose logging
         'postprocessors': [{
-            'key': 'FFmpegAudioConvertor',
+            'key': 'FFmpegAudioConvertor',  # Fixed the postprocessor key
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
+        'noplaylist': True,  # To avoid downloading entire playlists if the URL is for one
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=True)
+            # The file is downloaded to the path /tmp/audio.mp3 (or similar), let's return that path
+            audio_file_path = ydl.prepare_filename(info_dict)  # Gets the file path
             audio_url = info_dict.get("url", None)
             title = info_dict.get("title", "Unknown Title")
             writer = info_dict.get("artist", info_dict.get("uploader", "Unknown Writer"))
@@ -184,14 +185,11 @@ def download_audio(video_url):
             # Clean title and writer
             title, writer = clean_title_and_writer(title, writer)
 
-            # Fetch lyrics
-            # lyrics = get_lyrics_from_genius(writer, title)
-
             return {
-                'audioUrl': audio_url,
+                'audioUrl': audio_url,  # URL to audio stream
+                'audioFilePath': audio_file_path,  # Path to downloaded audio file
                 'title': title,
-                'writer': writer,
-                'lyrics': "lyrics"
+                'writer': writer
             }
     except yt_dlp.utils.DownloadError as e:
         return {'error': f'YouTube DownloadError: {str(e)}'}
@@ -219,12 +217,13 @@ def get_audio():
             return jsonify({'error': 'Failed to retrieve video metadata'}), 500
 
         # Download and convert the audio
-        audio_file_path = download_audio(video_url)
-        if isinstance(audio_file_path, dict):  # Check if an error occurred
-            return jsonify(audio_file_path), 500
+        audio_info = download_audio(video_url)
+        if 'error' in audio_info:  # Check if an error occurred during download
+            return jsonify(audio_info), 500
 
         return jsonify({
-            'audioUrl': audio_file_path,
+            'audioUrl': audio_info['audioUrl'],  # Stream URL for audio
+            'audioFilePath': audio_info['audioFilePath'],  # Path to the downloaded MP3
             'title': video_metadata['title'],
             'writer': video_metadata['uploader'],
             'duration': video_metadata['duration']
