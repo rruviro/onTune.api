@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 import logging
 import re
 import json
@@ -9,6 +9,7 @@ import urllib.parse
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
+from pytube import YouTube
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -194,6 +195,51 @@ def get_audio_info(video_id, metadata):
         'writer': writer,
         'duration': metadata['duration']
     }
+
+
+
+
+# Folder where downloaded videos will be saved
+DOWNLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'mp3')
+os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+# Route to handle the download request
+@app.route('/download', methods=['POST'])
+def download_video():
+    try:
+        # Get the YouTube video URL from the request
+        video_url = request.json.get('url')
+        
+        if not video_url:
+            return jsonify({"error": "No URL provided"}), 400
+
+        # Create YouTube object with the provided URL
+        yt = YouTube(video_url)
+
+        # Choose the highest resolution stream available
+        stream = yt.streams.get_highest_resolution()
+
+        # Define the file path for the downloaded video
+        file_path = os.path.join(DOWNLOAD_FOLDER, f'{yt.title}.mp4')
+
+        # Download the video to the specified folder
+        stream.download(output_path=DOWNLOAD_FOLDER, filename=f'{yt.title}.mp4')
+
+        return jsonify({"message": "Download complete", "file": f'{yt.title}.mp4'}), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Route to serve the downloaded video
+@app.route('/mp3/<filename>', methods=['GET'])
+def serve_video(filename):
+    try:
+        # Ensure the file exists and send it for download
+        return send_from_directory(DOWNLOAD_FOLDER, filename, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": f"File not found: {filename}"}), 404
+
+
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
