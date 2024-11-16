@@ -169,6 +169,8 @@ def fetch_audio_stream(video_url):
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
+        'outtmpl': 'downloads/%(id)s.%(ext)s',  # Optional: Specify output template
+        'noplaylist': True,  # Make sure it's a single video, not a playlist
     }
     try:
         # Extracting info using yt-dlp
