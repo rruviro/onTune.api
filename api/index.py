@@ -139,5 +139,54 @@ def playlist_info_endpoint():
         'songInfo': all_songs_info
     })
 
+
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')  # Get the video URL from the query parameter
+
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    result = download_audio(video_url)
+    return jsonify(json.loads(result))
+
+
+def download_audio(video_url):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': '/tmp/audio.%(ext)s',
+        'quiet': True,
+        'geo_bypass': True,
+        'geo_bypass_country': 'PH',
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info_dict = ydl.extract_info(video_url, download=False)
+            audio_url = info_dict.get("url", None)
+
+            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
+            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
+
+            title = remove_text_before_dash(title)
+            title = remove_writer_from_title(title, writer)
+            title = remove_symbols(title)
+
+            lyrics = get_lyrics_from_genius(writer, title)
+
+            if audio_url:
+                return json.dumps({
+                    'audioUrl': audio_url,
+                    'title': title,
+                    'writer': writer,
+                    'lyrics': lyrics
+                })
+            else:
+                return json.dumps({'error': 'Audio URL not found'})
+        except yt_dlp.utils.DownloadError as e:
+            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+        except Exception as e:
+            return json.dumps({'error': f'General Error: {str(e)}'})
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
