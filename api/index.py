@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 import yt_dlp
 import urllib.parse
 from pydub import AudioSegment
-import youtube_dl
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
