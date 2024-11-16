@@ -147,14 +147,57 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    result = download_audio(video_url)
-    return jsonify(json.loads(result))
+    # Extract the video ID from the URL
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        return jsonify({'error': 'Invalid video URL'}), 400
+
+    # Fetch video details using YouTube Data API
+    video_details = fetch_video_details(video_id)
+    if 'error' in video_details:
+        return jsonify(video_details), 400
+
+    # Use yt-dlp to fetch audio URL
+    audio_info = fetch_audio_url(video_url)
+    if 'error' in audio_info:
+        return jsonify(audio_info), 400
+
+    # Combine video details and audio info
+    response = {
+        'title': video_details.get('title'),
+        'description': video_details.get('description'),
+        'channelTitle': video_details.get('channelTitle'),
+        'audioUrl': audio_info.get('audioUrl')
+    }
+
+    return jsonify(response)
 
 
-def download_audio(video_url):
+def fetch_video_details(video_id):
+    """Fetch video details from YouTube Data API."""
+    try:
+        response = youtube.videos().list(
+            part='snippet',
+            id=video_id
+        ).execute()
+
+        if not response['items']:
+            return {'error': 'Video not found'}
+
+        video = response['items'][0]['snippet']
+        return {
+            'title': remove_parentheses(video.get('title', 'Unknown Title')),
+            'description': video.get('description', 'No description'),
+            'channelTitle': video.get('channelTitle', 'Unknown Channel')
+        }
+    except Exception as e:
+        return {'error': f'YouTube API error: {str(e)}'}
+
+
+def fetch_audio_url(video_url):
+    """Use yt-dlp to fetch the audio URL."""
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': '/tmp/audio.%(ext)s',
         'quiet': True,
         'geo_bypass': True,
         'geo_bypass_country': 'PH',
@@ -163,30 +206,18 @@ def download_audio(video_url):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get("url", None)
-
-            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
-            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
-
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
-
-            lyrics = get_lyrics_from_genius(writer, title)
-
-            if audio_url:
-                return json.dumps({
-                    'audioUrl': audio_url,
-                    'title': title,
-                    'writer': writer,
-                    'lyrics': lyrics
-                })
-            else:
-                return json.dumps({'error': 'Audio URL not found'})
+            return {'audioUrl': info_dict.get("url")}
         except yt_dlp.utils.DownloadError as e:
-            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+            return {'error': f'YouTube DownloadError: {str(e)}'}
         except Exception as e:
-            return json.dumps({'error': f'General Error: {str(e)}'})
+            return {'error': f'General Error: {str(e)}'}
+
+
+def extract_video_id(video_url):
+    """Extract the video ID from the YouTube URL."""
+    import re
+    match = re.search(r'v=([a-zA-Z0-9_-]{11})', video_url)
+    return match.group(1) if match else None
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
