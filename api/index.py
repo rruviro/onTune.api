@@ -1,9 +1,10 @@
 from flask import Flask, jsonify, request
 import logging
-import urllib.parse
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-import os
+import re
+import json
+import requests
+from bs4 import BeautifulSoup
+import yt_dlp
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -17,35 +18,27 @@ def after_request(response):
 
 # Helper functions for cleaning and fetching data
 def remove_parentheses(text):
-    """Removes any text within parentheses from a string."""
-    return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
+    return re.sub(r'\s*$$.*?$$\s*', '', text).strip()
 
 def remove_symbols(text):
-    """Removes most symbols, retaining only alphanumeric characters and spaces."""
     return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
 
 def remove_text_before_dash(text):
-    """Removes any text before the first dash, including the dash, and removes any space after the dash."""
     return text.split("-", 1)[-1].lstrip() if "-" in text else text
 
 def remove_writer_from_title(title, writer):
-    """Removes the writer's name from the title if it appears within it."""
     writer_escaped = re.escape(writer)
     return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
 
 def get_lyrics_from_genius(writer, title):
-    """Fetch lyrics from Genius based on song title and artist."""
     writer = writer.replace(" ", "-").capitalize()
     title = title.replace(" ", "-")
-
     search_url = f"https://genius.com/{writer}-{title}-lyrics"
 
     try:
         response = requests.get(search_url)
         response.raise_for_status()
-
         soup = BeautifulSoup(response.text, 'html.parser')
-        
         lyrics_div = soup.find('div', class_='Lyrics__Container-sc-1ynbvzw-1 kUgSbL')
         if lyrics_div:
             lyrics = str(lyrics_div)
@@ -53,7 +46,6 @@ def get_lyrics_from_genius(writer, title):
             lyrics = lyrics.replace('<br>', '\n')
             lyrics = re.sub(r'\[.*?\]', '', lyrics)
             lyrics = lyrics.replace('"', '"\n')
-
             return lyrics
         else:
             return 'Lyrics not found in the expected location.'
@@ -64,84 +56,77 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-def download_audio(video_url):
+def get_audio_info(video_url):
     ydl_opts = {
-        'format': 'bestaudio/best',  
-        'outtmpl': '/tmp/audio.%(ext)s',  
-        'quiet': True,  
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get("url", None)
-            
-            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
-            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
-
-            title = remove_text_before_dash(title)
-            title = remove_writer_from_title(title, writer)
-            title = remove_symbols(title)
-
-            lyrics = get_lyrics_from_genius(writer, title)
-
-            if audio_url:
-                return json.dumps({
-                    'audioUrl': audio_url,
-                    'title': title,
-                    'writer': writer,
-                    'lyrics': lyrics
-                })
-            else:
-                return json.dumps({'error': 'Audio URL not found'})
-        except Exception as e:
-            return json.dumps({'error': str(e)})
-
-# Playlist info function
-def get_playlist_info(playlist_url):
-    ydl_opts = {
+        'format': 'bestaudio/best',
         'quiet': True,
-        'extract_flat': True,
+        'no_warnings': True,
+        'extract_flat': 'in_playlist',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            playlist_info = ydl.extract_info(playlist_url, download=False)
-
-            if 'entries' in playlist_info:
-                song_info = [
-                    {
-                        'title': entry['title'],
-                        'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
-                        'url': f"https://www.youtube.com/watch?v={entry['id']}",
-                        'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),
-                        'playlistUrl': playlist_url
-                    } for entry in playlist_info['entries']
-                ]
-                
-                return {
-                    'songCount': len(song_info),
-                    'songInfo': song_info
-                }
-            else:
-                return {'error': 'No entries found in the playlist'}
+            info = ydl.extract_info(video_url, download=False)
+            if 'entries' in info:  # It's a playlist
+                return get_playlist_info(info)
+            else:  # It's a single video
+                return get_single_video_info(info)
         except Exception as e:
             return {'error': str(e)}
+
+def get_single_video_info(info):
+    title = remove_parentheses(info.get("title", "Unknown Title"))
+    writer = remove_parentheses(info.get("artist", info.get("uploader", "Unknown Writer")))
+    title = remove_text_before_dash(title)
+    title = remove_writer_from_title(title, writer)
+    title = remove_symbols(title)
+    lyrics = get_lyrics_from_genius(writer, title)
+
+    return {
+        'audioUrl': info.get('url'),
+        'title': title,
+        'writer': writer,
+        'lyrics': lyrics
+    }
+
+def get_playlist_info(info):
+    song_info = [
+        {
+            'title': entry['title'],
+            'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
+            'url': f"https://www.youtube.com/watch?v={entry['id']}",
+            'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),
+        } for entry in info['entries'] if entry
+    ]
+    
+    return {
+        'songCount': len(song_info),
+        'songInfo': song_info
+    }
+
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    result = get_audio_info(video_url)
+    return jsonify(result)
 
 @app.route('/get_playlist_info', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('api/links.txt', 'r') as file:
+        with open('links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
-        return jsonify({'error': f'Failed to read list.txt: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in list.txt'}), 400
+        return jsonify({'error': 'No playlist URLs found in links.txt'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
-        result = get_playlist_info(playlist_url)
+        result = get_audio_info(playlist_url)
         if isinstance(result, dict) and 'songInfo' in result:
             all_songs_info.extend(result['songInfo'])
 
