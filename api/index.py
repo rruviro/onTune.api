@@ -196,9 +196,13 @@ def get_audio_info(video_id, metadata):
     }
 
 
-@app.route('/convert', methods=['POST'])
+@app.route('/convert', methods=['GET', 'POST'])
 def convert_youtube_to_mp3():
-    youtube_url = request.json.get('url')
+    if request.method == 'POST':
+        youtube_url = request.json.get('url')
+    else:
+        youtube_url = request.args.get('url')  # Get URL from query parameter
+
     if not youtube_url:
         return jsonify({'error': 'No URL provided'}), 400
 
