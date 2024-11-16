@@ -195,7 +195,6 @@ def get_audio_info(video_id, metadata):
         'duration': metadata['duration']
     }
 
-
 @app.route('/convert', methods=['GET', 'POST'])
 def convert_youtube_to_mp3():
     if request.method == 'POST':
@@ -210,7 +209,7 @@ def convert_youtube_to_mp3():
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{
-            'key': 'FFmpegAudio',
+            'key': 'FFmpegAudio',  # Corrected key
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
