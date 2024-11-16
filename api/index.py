@@ -116,7 +116,7 @@ def get_audio():
 @app.route('/get_playlist_info', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('links.txt', 'r') as file:
+        with open('api/links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
         return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
