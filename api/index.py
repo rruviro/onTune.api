@@ -166,6 +166,7 @@ def download_audio(video_url):
         'outtmpl': '/tmp/audio.%(ext)s',
         'quiet': False,
         'geo_bypass': True,
+        'verbose': True,  # Enable verbose logging
         'postprocessors': [{
             'key': 'FFmpegAudioConvertor',
             'preferredcodec': 'mp3',
