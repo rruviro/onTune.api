@@ -8,11 +8,11 @@ import os
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-# Use the environment variable
-API_KEY = os.environ.get('AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg')
+# Use the API key directly
+API_KEY = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
 
-# Only build the YouTube client if API_KEY is available
-youtube = build('youtube', 'v3', developerKey=API_KEY) if API_KEY else None
+# Build the YouTube client
+youtube = build('youtube', 'v3', developerKey=API_KEY)
 
 @app.after_request
 def after_request(response):
@@ -23,9 +23,6 @@ def after_request(response):
 
 @app.route('/get-audio-info', methods=['GET'])
 def get_audio_info():
-    if not youtube:
-        return jsonify({'error': 'YouTube API key not configured'}), 500
-
     try:
         video_url = request.args.get('url')
         if not video_url:
