@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, redirect, request
+from flask import Flask, jsonify, request
 import logging
 import re
 import json
@@ -9,7 +9,7 @@ import urllib.parse
 from pydub import AudioSegment
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from os import BytesIO
+import os
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -73,14 +73,14 @@ def extract_playlist_id(url):
 @app.route('/playlist', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('api/links.txt', 'r') as file:
+        with open('links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
-        logging.error(f"Failed to read api/links.txt: {str(e)}")
-        return jsonify({'error': f'Failed to read api/links.txt: {str(e)}'}), 500
+        logging.error(f"Failed to read links.txt: {str(e)}")
+        return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
+        return jsonify({'error': 'No playlist URLs found in links.txt'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
@@ -102,50 +102,82 @@ def playlist_info_endpoint():
 
 # Your YouTube API key
 YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
-YOUTUBE_API_SERVICE_NAME = "youtube"
-YOUTUBE_API_VERSION = "v3"
 
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-    return response
 
-def validate_youtube_url(video_url):
-    """Validates the YouTube video URL using the YouTube Data API."""
+def remove_parentheses(text):
+    """Removes any text within parentheses from a string."""
+    return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
+
+def remove_symbols(text):
+    """Removes most symbols, retaining only alphanumeric characters and spaces."""
+    return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
+
+def remove_text_before_dash(text):
+    """Removes any text before the first dash, including the dash, and removes any space after the dash."""
+    return text.split("-", 1)[-1].lstrip() if "-" in text else text
+
+def remove_writer_from_title(title, writer):
+    """Removes the writer's name from the title if it appears within it."""
+    writer_escaped = re.escape(writer)
+    return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
+
+def get_lyrics_from_genius(writer, title):
+    """Fetch lyrics from Genius based on song title and artist."""
+    writer = writer.replace(" ", "-").capitalize()  # Format writer
+    title = title.replace(" ", "-")  # Format title
+    search_url = f"https://genius.com/{writer}-{title}-lyrics"
+
     try:
-        parsed_url = urllib.parse.urlparse(video_url)
-        video_id = urllib.parse.parse_qs(parsed_url.query).get("v")
-        if not video_id:
-            return None, "Invalid video URL"
-
-        video_id = video_id[0]
-
-        # Use the YouTube Data API
-        response = youtube.videos().list(part="id,snippet", id=video_id).execute()
-
-        if "items" not in response or len(response["items"]) == 0:
-            return None, "Video not found"
-
-        return video_id, None
+        response = requests.get(search_url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        lyrics_div = soup.find('div', class_='Lyrics__Container-sc-1ynbvzw-1 kUgSbL')
+        if lyrics_div:
+            lyrics = BeautifulSoup(str(lyrics_div), 'html.parser').get_text("\n", strip=True)
+            lyrics = re.sub(r'\[.*?\]', '', lyrics)  # Remove text inside brackets
+            return lyrics
+        else:
+            return 'Lyrics not found in the expected location.'
+    except requests.exceptions.HTTPError as http_err:
+        if response.status_code == 404:
+            return f"Lyrics not found for {writer} - {title} (404 Error)"
+        return f"HTTP error occurred: {http_err}"
     except Exception as e:
-        return None, f"Error validating URL: {e}"
+        return f"Error fetching lyrics: {str(e)}"
 
-def fetch_audio_url(video_url):
-    """Fetches the direct audio stream URL using yt-dlp."""
+def fetch_video_metadata(video_url):
+    """Fetch video metadata using the YouTube Data API."""
+    video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url.split("/")[-1]
+    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
+
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        video_data = response.json()
+
+        if "items" in video_data and len(video_data["items"]) > 0:
+            snippet = video_data["items"][0]["snippet"]
+            title = snippet.get("title", "Unknown Title")
+            uploader = snippet.get("channelTitle", "Unknown Uploader")
+            return {"title": title, "uploader": uploader}
+        else:
+            return {"error": "Video not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def fetch_audio_stream(video_url):
+    """Fetch the audio stream URL using yt-dlp."""
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
     }
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(video_url, download=False)
             audio_url = info_dict.get("url", None)
-            return audio_url, None
+            return audio_url
     except Exception as e:
-        return None, str(e)
+        return None
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -153,18 +185,27 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    # Step 1: Validate YouTube URL
-    video_id, error = validate_youtube_url(video_url)
-    if error:
-        return jsonify({'error': error}), 400
+    video_metadata = fetch_video_metadata(video_url)
+    if "error" in video_metadata:
+        return jsonify({'error': video_metadata['error']}), 500
 
-    # Step 2: Fetch Audio URL
-    audio_url, error = fetch_audio_url(video_url)
-    if error:
-        return jsonify({'error': f"Failed to fetch audio stream: {error}"}), 500
+    title = remove_parentheses(video_metadata["title"])
+    writer = remove_parentheses(video_metadata["uploader"])
+    title = remove_text_before_dash(title)
+    title = remove_writer_from_title(title, writer)
+    title = remove_symbols(title)
+    lyrics = get_lyrics_from_genius(writer, title)
+    audio_stream_url = fetch_audio_stream(video_url)
 
-    # Step 3: Redirect to the Audio URL
-    return redirect(audio_url, code=302)
+    if not audio_stream_url:
+        return jsonify({'error': 'Failed to fetch audio stream'}), 500
+
+    return jsonify({
+        "title": title,
+        "writer": writer,
+        "lyrics": lyrics,
+        "audioUrl": audio_stream_url
+    })
     
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
