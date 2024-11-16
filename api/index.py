@@ -161,16 +161,9 @@ def download_audio(video_url):
     Download the audio from the given YouTube URL and extract its metadata.
     """
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': '/tmp/audio.%(ext)s',
-        'quiet': False,
-        'geo_bypass': True,
-        'postprocessors': [{
-            'key': 'FFmpegAudioConvertor',  # Fixed the postprocessor key
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'noplaylist': True,  # To avoid downloading entire playlists if the URL is for one
+        'format': 'bestaudio/best',  # Choose the best audio format available
+        'outtmpl': '/tmp/audio.%(ext)s',  # Output path
+        'quiet': True,  # Suppress all logs (including progress bars)
     }
 
     try:
