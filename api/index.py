@@ -195,19 +195,23 @@ def get_audio_info(video_id, metadata):
         'duration': metadata['duration']
     }
 
+# Use the API key directly
+API_KEY = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
+# Build the YouTube client
+youtube = build('youtube', 'v3', developerKey=API_KEY)
+
 @app.route('/video-details', methods=['GET'])
 def get_video_details():
-    # Get video URL from the query parameter
     video_url = request.args.get('url')
 
     if not video_url:
         return jsonify({'error': 'No URL provided'}), 400
 
-    # Extract the video ID from the URL (assuming standard YouTube URL)
-    video_id = video_url.split("v=")[1].split("&")[0]
-
     try:
-        # Fetch video details from the YouTube API
+        # Extract the video ID from the URL
+        video_id = video_url.split("v=")[1].split("&")[0]
+
+        # Make the YouTube API request
         request = youtube.videos().list(
             part='snippet,contentDetails,statistics',
             id=video_id
@@ -219,7 +223,6 @@ def get_video_details():
 
         video_info = response['items'][0]
 
-        # Prepare the metadata response
         video_data = {
             'title': video_info['snippet']['title'],
             'description': video_info['snippet']['description'],
