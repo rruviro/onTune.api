@@ -144,25 +144,7 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-def fetch_video_metadata(video_url):
-    """Fetch video metadata using the YouTube Data API."""
-    video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url.split("/")[-1]
-    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
-
-    try:
-        response = requests.get(api_url)
-        response.raise_for_status()
-        video_data = response.json()
-
-        if "items" in video_data and len(video_data["items"]) > 0:
-            snippet = video_data["items"][0]["snippet"]
-            title = snippet.get("title", "Unknown Title")
-            uploader = snippet.get("channelTitle", "Unknown Uploader")
-            return {"title": title, "uploader": uploader}
-        else:
-            return {"error": "Video not found"}
-    except Exception as e:
-        return {"error": str(e)}
+YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
 
 def fetch_audio_stream(video_url):
     """Fetch the audio stream URL using yt-dlp."""
@@ -181,6 +163,9 @@ def fetch_audio_stream(video_url):
                 return audio_url
             else:
                 raise ValueError("Audio stream URL not found")
+    except yt_dlp.utils.DownloadError as e:
+        print(f"yt-dlp download error: {e}")
+        return None
     except Exception as e:
         print(f"Error fetching audio stream: {e}")  # Log the error for debugging
         return None
@@ -219,6 +204,26 @@ def get_audio():
         "lyrics": lyrics,
         "audioUrl": audio_stream_url
     })
+
+def fetch_video_metadata(video_url):
+    """Fetch video metadata using the YouTube Data API."""
+    video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url.split("/")[-1]
+    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
+
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        video_data = response.json()
+
+        if "items" in video_data and len(video_data["items"]) > 0:
+            snippet = video_data["items"][0]["snippet"]
+            title = snippet.get("title", "Unknown Title")
+            uploader = snippet.get("channelTitle", "Unknown Uploader")
+            return {"title": title, "uploader": uploader}
+        else:
+            return {"error": "Video not found"}
+    except Exception as e:
+        return {"error": str(e)}
     
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
