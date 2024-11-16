@@ -6,7 +6,6 @@ import requests
 from bs4 import BeautifulSoup
 import yt_dlp
 import urllib.parse
-from pydub import AudioSegment
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
@@ -123,6 +122,32 @@ def clean_title_and_writer(title, writer):
 
     return title, writer
 
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    print(f"Received video URL: {video_url}")
+    video_id = extract_video_id(video_url)
+    print(f"Extracted Video ID: {video_id}")
+    
+    if not video_id:
+        return jsonify({'error': 'Invalid YouTube URL'}), 400
+
+    try:
+        video_metadata = fetch_video_metadata(video_id)
+        print(f"Video Metadata: {video_metadata}")
+        if not video_metadata:
+            return jsonify({'error': 'Failed to retrieve video metadata'}), 500
+
+        audio_info = get_audio_info(video_id, video_metadata)
+        print(f"Audio Info: {audio_info}")
+        return jsonify(audio_info)
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
+
 def extract_video_id(url):
     """Extract the video ID from a YouTube URL."""
     from urllib.parse import urlparse, parse_qs
@@ -156,93 +181,19 @@ def fetch_video_metadata(video_id):
         print(f"YouTube API error: {str(e)}")
         return None
 
-def download_audio(video_url):
-    """Fetch video metadata from the YouTube Data API."""
-    api_key = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
-    youtube = build("youtube", "v3", developerKey=api_key)
+def get_audio_info(video_id, metadata):
+    """Generate audio stream URL and metadata."""
+    # YouTube provides video streaming URLs through its embed system.
+    audio_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1"
 
-    video_id = extract_video_id(video_url)  # Ensure you have the correct function to extract the video ID
+    title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
 
-    try:
-        # Request video metadata using the YouTube Data API
-        video_response = youtube.videos().list(
-            part="snippet,contentDetails",
-            id=video_id
-        ).execute()
-
-        if not video_response['items']:
-            return {'error': 'Video not found'}
-
-        snippet = video_response['items'][0]['snippet']
-        content_details = video_response['items'][0]['contentDetails']
-
-        title = snippet['title']
-        uploader = snippet['channelTitle']
-        duration = content_details['duration']
-
-        # Now fetch the direct audio URL from yt-dlp
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'noplaylist': True,
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=False)
-            audio_url = info_dict.get('url', None)
-
-            if not audio_url:
-                return {'error': 'Failed to extract audio URL.'}
-
-            # Clean title and uploader (you can use the clean_title_and_writer function here)
-            title, uploader = clean_title_and_writer(title, uploader)
-
-            return {
-                'audioUrl': audio_url,
-                'title': title,
-                'uploader': uploader,
-                'duration': duration
-            }
-
-    except Exception as e:
-        return {'error': f'Error fetching metadata: {str(e)}'}
-    
-@app.route('/get-audio', methods=['GET'])
-def get_audio():
-    video_url = request.args.get('url')
-    if not video_url:
-        return jsonify({'error': 'Missing video URL parameter'}), 400
-
-    print(f"Received video URL: {video_url}")
-    video_id = extract_video_id(video_url)
-    print(f"Extracted Video ID: {video_id}")
-
-    if not video_id:
-        return jsonify({'error': 'Invalid YouTube URL'}), 400
-
-    try:
-        # Fetch video metadata (optional)
-        video_metadata = fetch_video_metadata(video_id)
-        print(f"Video Metadata: {video_metadata}")
-        if not video_metadata:
-            return jsonify({'error': 'Failed to retrieve video metadata'}), 500
-
-        # Download and convert the audio
-        audio_info = download_audio(video_url)
-        if 'error' in audio_info:  # Check if an error occurred during download
-            return jsonify(audio_info), 500
-
-        return jsonify({
-            'audioUrl': audio_info['audioUrl'],  # Stream URL for audio
-            'audioFilePath': audio_info['audioFilePath'],  # Path to the downloaded MP3
-            'title': video_metadata['title'],
-            'writer': video_metadata['uploader'],
-            'duration': video_metadata['duration']
-        })
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
+    return {
+        'audioUrl': audio_url,
+        'title': title,
+        'writer': writer,
+        'duration': metadata['duration']
+    }
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
