@@ -6,6 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import yt_dlp
 import urllib.parse
+from pydub import AudioSegment
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
@@ -122,31 +123,6 @@ def clean_title_and_writer(title, writer):
 
     return title, writer
 
-@app.route('/get-audio', methods=['GET'])
-def get_audio():
-    video_url = request.args.get('url')
-    if not video_url:
-        return jsonify({'error': 'Missing video URL parameter'}), 400
-
-    print(f"Received video URL: {video_url}")
-    video_id = extract_video_id(video_url)
-    print(f"Extracted Video ID: {video_id}")
-    
-    if not video_id:
-        return jsonify({'error': 'Invalid YouTube URL'}), 400
-
-    try:
-        video_metadata = fetch_video_metadata(video_id)
-        print(f"Video Metadata: {video_metadata}")
-        if not video_metadata:
-            return jsonify({'error': 'Failed to retrieve video metadata'}), 500
-
-        audio_info = get_audio_info(video_id, video_metadata)
-        print(f"Audio Info: {audio_info}")
-        return jsonify(audio_info)
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
 
 def extract_video_id(url):
     """Extract the video ID from a YouTube URL."""
@@ -181,19 +157,70 @@ def fetch_video_metadata(video_id):
         print(f"YouTube API error: {str(e)}")
         return None
 
-def get_audio_info(video_id, metadata):
-    """Generate audio stream URL and metadata."""
-    # YouTube provides video streaming URLs through its embed system.
-    audio_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1"
-
-    title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
-
-    return {
-        'audioUrl': audio_url,
-        'title': title,
-        'writer': writer,
-        'duration': metadata['duration']
+def download_audio(video_url):
+    """Download audio from YouTube and convert to MP3."""
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': '/tmp/audio.%(ext)s',
+        'quiet': True,
+        'geo_bypass': True,
+        'postprocessors': [{
+            'key': 'FFmpegAudioConvertor',
+            'preferredformat': 'mp3',  # Set preferred audio format
+        }],
     }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Extract the audio file
+            info_dict = ydl.extract_info(video_url, download=True)
+            audio_file = ydl.prepare_filename(info_dict)
+
+            # Convert to MP3 if needed
+            audio = AudioSegment.from_file(audio_file)
+            mp3_file_path = "/tmp/audio.mp3"
+            audio.export(mp3_file_path, format="mp3")
+
+            return mp3_file_path
+
+    except Exception as e:
+        return {'error': f'Error downloading or converting audio: {str(e)}'}
+
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    print(f"Received video URL: {video_url}")
+    video_id = extract_video_id(video_url)
+    print(f"Extracted Video ID: {video_id}")
+
+    if not video_id:
+        return jsonify({'error': 'Invalid YouTube URL'}), 400
+
+    try:
+        # Fetch video metadata (optional)
+        video_metadata = fetch_video_metadata(video_id)
+        print(f"Video Metadata: {video_metadata}")
+        if not video_metadata:
+            return jsonify({'error': 'Failed to retrieve video metadata'}), 500
+
+        # Download and convert the audio
+        audio_file_path = download_audio(video_url)
+        if isinstance(audio_file_path, dict):  # Check if an error occurred
+            return jsonify(audio_file_path), 500
+
+        return jsonify({
+            'audioUrl': audio_file_path,
+            'title': video_metadata['title'],
+            'writer': video_metadata['uploader'],
+            'duration': video_metadata['duration']
+        })
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
