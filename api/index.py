@@ -25,46 +25,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response
 
-# Helper functions for cleaning and fetching data
-def remove_parentheses(text):
-    return re.sub(r'\s*$$.*?$$\s*', '', text).strip()
-
-def remove_symbols(text):
-    return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
-
-def remove_text_before_dash(text):
-    return text.split("-", 1)[-1].lstrip() if "-" in text else text
-
-def remove_writer_from_title(title, writer):
-    writer_escaped = re.escape(writer)
-    return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
-
-def get_lyrics_from_genius(writer, title):
-    writer = writer.replace(" ", "-").capitalize()
-    title = title.replace(" ", "-")
-    search_url = f"https://genius.com/{writer}-{title}-lyrics"
-
-    try:
-        response = requests.get(search_url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        lyrics_div = soup.find('div', class_='Lyrics__Container-sc-1ynbvzw-1 kUgSbL')
-        if lyrics_div:
-            lyrics = str(lyrics_div)
-            lyrics = BeautifulSoup(lyrics, 'html.parser').get_text("\n", strip=True)
-            lyrics = lyrics.replace('<br>', '\n')
-            lyrics = re.sub(r'\[.*?\]', '', lyrics)
-            lyrics = lyrics.replace('"', '"\n')
-            return lyrics
-        else:
-            return 'Lyrics not found in the expected location.'
-    except requests.exceptions.HTTPError as http_err:
-        if response.status_code == 404:
-            return f"Lyrics not found for {writer} - {title} (404 Error)"
-        return f"HTTP error occurred: {http_err}"
-    except Exception as e:
-        return f"Error fetching lyrics: {str(e)}"
-
 def get_playlist_info(playlist_id):
     try:
         playlist_items = []
@@ -138,6 +98,89 @@ def playlist_info_endpoint():
         'songInfo': all_songs_info
     })
 
+
+def remove_parentheses(text):
+    """Removes any text within parentheses from a string."""
+    return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
+
+def remove_symbols(text):
+    """Removes most symbols, retaining only alphanumeric characters and spaces."""
+    return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
+
+def remove_text_before_dash(text):
+    """Removes any text before the first dash, including the dash."""
+    return text.split("-", 1)[-1].lstrip() if "-" in text else text
+
+def remove_writer_from_title(title, writer):
+    """Removes the writer's name from the title if it appears within it."""
+    writer_escaped = re.escape(writer)
+    return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
+
+def get_lyrics_from_genius(writer, title):
+    """Fetch lyrics from Genius based on song title and artist."""
+    writer = writer.replace(" ", "-").capitalize()
+    title = title.replace(" ", "-")
+    search_url = f"https://genius.com/{writer}-{title}-lyrics"
+
+    try:
+        response = requests.get(search_url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        lyrics_div = soup.find('div', class_='Lyrics__Container-sc-1ynbvzw-1 kUgSbL')
+        if lyrics_div:
+            lyrics = BeautifulSoup(str(lyrics_div), 'html.parser').get_text("\n", strip=True)
+            lyrics = re.sub(r'\[.*?\]', '', lyrics)
+            return lyrics
+        else:
+            return 'Lyrics not found in the expected location.'
+    except requests.exceptions.HTTPError as http_err:
+        return f"Lyrics not found for {writer} - {title} (HTTP Error: {http_err})"
+    except Exception as e:
+        return f"Error fetching lyrics: {str(e)}"
+
+@app.route('/get-audio', methods=['GET'])
+def get_audio():
+    video_url = request.args.get('url')
+    if not video_url:
+        return jsonify({'error': 'Missing video URL parameter'}), 400
+
+    result = download_audio(video_url)
+    return jsonify(json.loads(result))
+
+def download_audio(video_url):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': '/tmp/audio.%(ext)s',
+        'quiet': True,
+        'geo_bypass': True,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info_dict = ydl.extract_info(video_url, download=False)
+            audio_url = info_dict.get("url", None)
+            title = remove_parentheses(info_dict.get("title", "Unknown Title"))
+            writer = remove_parentheses(info_dict.get("artist", info_dict.get("uploader", "Unknown Writer")))
+
+            title = remove_text_before_dash(title)
+            title = remove_writer_from_title(title, writer)
+            title = remove_symbols(title)
+
+            lyrics = get_lyrics_from_genius(writer, title)
+
+            if audio_url:
+                return json.dumps({
+                    'audioUrl': audio_url,
+                    'title': title,
+                    'writer': writer,
+                    'lyrics': lyrics
+                })
+            else:
+                return json.dumps({'error': 'Audio URL not found'})
+        except yt_dlp.utils.DownloadError as e:
+            return json.dumps({'error': f'YouTube DownloadError: {str(e)}'})
+        except Exception as e:
+            return json.dumps({'error': f'General Error: {str(e)}'})
 
 @app.route('/get-audio-info', methods=['GET'])
 def get_audio_info():
