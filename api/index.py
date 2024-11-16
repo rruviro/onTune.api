@@ -183,17 +183,52 @@ def fetch_video_metadata(video_id):
 
 def get_audio_info(video_id, metadata):
     """Generate audio stream URL and metadata."""
-    # YouTube provides video streaming URLs through its embed system.
-    audio_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1"
+    try:
+        # Define the URL for the video
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
+        # Create an yt-dlp instance with options to fetch audio
+        ydl_opts = {
+            'format': 'bestaudio/best',  # Get the best audio stream
+            'extractaudio': True,  # Extract audio only
+            'audioquality': 1,  # Highest quality
+            'outtmpl': '%(id)s.%(ext)s',  # Output file template (you can modify it)
+            'noplaylist': True  # Avoid downloading entire playlists
+        }
 
-    return {
-        'audioUrl': audio_url,
-        'title': title,
-        'writer': writer,
-        'duration': metadata['duration']
-    }
+        # Use yt-dlp to get audio information
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(video_url, download=False)  # Don't download, just get info
 
+            if 'formats' in info_dict:
+                # Find the best audio format (audio_only stream)
+                audio_url = None
+                for fmt in info_dict['formats']:
+                    if fmt.get('acodec') and fmt['vcodec'] == 'none':  # Make sure it's audio-only
+                        audio_url = fmt['url']
+                        break
+
+                if not audio_url:
+                    raise Exception("No valid audio stream found")
+
+                # Clean up title and writer for better display
+                title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
+
+                return {
+                    'audioUrl': audio_url,
+                    'title': title,
+                    'writer': writer,
+                    'duration': metadata['duration']
+                }
+            else:
+                raise Exception("Video formats not found")
+    except Exception as e:
+        print(f"Error fetching audio info: {e}")
+        raise
+
+def clean_title_and_writer(title, uploader):
+    """Clean up the title and writer metadata."""
+    # You can add more complex logic for sanitization if needed
+    return title.strip(), uploader.strip()
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
