@@ -158,33 +158,44 @@ def fetch_video_metadata(video_id):
         return None
 
 def download_audio(video_url):
-    """Download audio from YouTube and convert to MP3."""
+    """
+    Download the audio from the given YouTube URL and extract its metadata.
+    """
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': '/tmp/audio.%(ext)s',
-        'quiet': True,
+        'quiet': False,
         'geo_bypass': True,
         'postprocessors': [{
             'key': 'FFmpegAudioConvertor',
-            'preferredformat': 'mp3',  # Set preferred audio format
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
         }],
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract the audio file
             info_dict = ydl.extract_info(video_url, download=True)
-            audio_file = ydl.prepare_filename(info_dict)
+            audio_url = info_dict.get("url", None)
+            title = info_dict.get("title", "Unknown Title")
+            writer = info_dict.get("artist", info_dict.get("uploader", "Unknown Writer"))
 
-            # Convert to MP3 if needed
-            audio = AudioSegment.from_file(audio_file)
-            mp3_file_path = "/tmp/audio.mp3"
-            audio.export(mp3_file_path, format="mp3")
+            # Clean title and writer
+            title, writer = clean_title_and_writer(title, writer)
 
-            return mp3_file_path
+            # Fetch lyrics
+            # lyrics = get_lyrics_from_genius(writer, title)
 
+            return {
+                'audioUrl': audio_url,
+                'title': title,
+                'writer': writer,
+                'lyrics': "lyrics"
+            }
+    except yt_dlp.utils.DownloadError as e:
+        return {'error': f'YouTube DownloadError: {str(e)}'}
     except Exception as e:
-        return {'error': f'Error downloading or converting audio: {str(e)}'}
+        return {'error': f'General Error: {str(e)}'}
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
