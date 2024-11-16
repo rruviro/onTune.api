@@ -164,29 +164,48 @@ def download_audio(video_url):
         'format': 'bestaudio/best',  # Choose the best audio format available
         'outtmpl': '/tmp/audio.%(ext)s',  # Output path
         'quiet': True,  # Suppress all logs (including progress bars)
+        'postprocessors': [{
+            'key': 'FFmpegAudioConvertor',  # Fixed the postprocessor key
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'noplaylist': True,
     }
 
     try:
+        # Log the video URL to confirm it's being passed correctly
+        logging.debug(f"Starting download for video URL: {video_url}")
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Extract video info and download audio
             info_dict = ydl.extract_info(video_url, download=True)
-            # The file is downloaded to the path /tmp/audio.mp3 (or similar), let's return that path
-            audio_file_path = ydl.prepare_filename(info_dict)  # Gets the file path
+            audio_file_path = ydl.prepare_filename(info_dict)  # Gets the downloaded file path
             audio_url = info_dict.get("url", None)
             title = info_dict.get("title", "Unknown Title")
             writer = info_dict.get("artist", info_dict.get("uploader", "Unknown Writer"))
 
-            # Clean title and writer
+            # Log extracted metadata
+            logging.debug(f"Video Title: {title}, Writer: {writer}, File Path: {audio_file_path}")
+            
+            # Clean title and writer (assuming clean_title_and_writer function is defined)
             title, writer = clean_title_and_writer(title, writer)
 
+            # Return audio information
             return {
                 'audioUrl': audio_url,  # URL to audio stream
                 'audioFilePath': audio_file_path,  # Path to downloaded audio file
                 'title': title,
                 'writer': writer
             }
+
     except yt_dlp.utils.DownloadError as e:
+        # Log yt-dlp specific errors
+        logging.error(f"Download error: {str(e)}")
         return {'error': f'YouTube DownloadError: {str(e)}'}
+    
     except Exception as e:
+        # General exception handler to capture any other errors
+        logging.error(f"General error occurred: {str(e)}")
         return {'error': f'General Error: {str(e)}'}
 
 @app.route('/get-audio', methods=['GET'])
