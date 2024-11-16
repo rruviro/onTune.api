@@ -5,7 +5,6 @@ import json
 import requests
 from bs4 import BeautifulSoup
 import yt_dlp
-
 import urllib.parse
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -67,104 +66,49 @@ def get_lyrics_from_genius(writer, title):
     except Exception as e:
         return f"Error fetching lyrics: {str(e)}"
 
-def get_audio_info(video_url):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'extract_flat': 'in_playlist',
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(video_url, download=False)
-            if 'entries' in info:  # It's a playlist
-                return get_playlist_info(info)
-            else:  # It's a single video
-                return get_single_video_info(info)
-        except Exception as e:
-            return {'error': str(e)}
-
-def get_single_video_info(info):
-    title = remove_parentheses(info.get("title", "Unknown Title"))
-    writer = remove_parentheses(info.get("artist", info.get("uploader", "Unknown Writer")))
-    title = remove_text_before_dash(title)
-    title = remove_writer_from_title(title, writer)
-    title = remove_symbols(title)
-    lyrics = get_lyrics_from_genius(writer, title)
-
-    return {
-        'audioUrl': info.get('url'),
-        'title': title,
-        'writer': writer,
-        'lyrics': lyrics
-    }
-
-def get_playlist_info(info):
-    song_info = [
-        {
-            'title': entry['title'],
-            'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
-            'url': f"https://www.youtube.com/watch?v={entry['id']}",
-            'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),
-        } for entry in info['entries'] if entry
-    ]
-    
-    return {
-        'songCount': len(song_info),
-        'songInfo': song_info
-    }
-
-@app.route('/get-audio-info', methods=['GET'])
-def get_audio_info():
+def get_playlist_info(playlist_id):
     try:
-        video_url = request.args.get('url')
-        if not video_url:
-            return jsonify({'error': 'Missing video URL parameter'}), 400
+        playlist_items = []
+        next_page_token = None
 
-        video_id = extract_video_id(video_url)
-        if not video_id:
-            return jsonify({'error': 'Invalid YouTube URL'}), 400
+        while True:
+            playlist_response = youtube.playlistItems().list(
+                part='snippet',
+                playlistId=playlist_id,
+                maxResults=50,
+                pageToken=next_page_token
+            ).execute()
 
-        return fetch_video_info(video_id)
-    except Exception as e:
-        logging.error(f"Error in get_audio_info: {str(e)}")
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+            playlist_items.extend(playlist_response['items'])
+            next_page_token = playlist_response.get('nextPageToken')
 
-def extract_video_id(url):
-    parsed_url = urllib.parse.urlparse(url)
-    if parsed_url.hostname in ('youtu.be', 'www.youtu.be'):
-        return parsed_url.path[1:]
-    if parsed_url.hostname in ('youtube.com', 'www.youtube.com', 'music.youtube.com'):
-        if 'v' in urllib.parse.parse_qs(parsed_url.query):
-            return urllib.parse.parse_qs(parsed_url.query)['v'][0]
-    return None
+            if not next_page_token:
+                break
 
-def fetch_video_info(video_id):
-    try:
-        response = youtube.videos().list(
-            part='snippet,contentDetails',
-            id=video_id
-        ).execute()
+        song_info = []
+        for item in playlist_items:
+            video = item['snippet']
+            song_info.append({
+                'title': video['title'],
+                'writer': video['videoOwnerChannelTitle'],
+                'url': f"https://www.youtube.com/watch?v={video['resourceId']['videoId']}",
+                'image_url': video['thumbnails']['high']['url'],
+            })
 
-        if not response['items']:
-            return jsonify({'error': 'Video not found'}), 404
-
-        video_info = response['items'][0]
-        snippet = video_info['snippet']
-        content_details = video_info['contentDetails']
-
-        return jsonify({
-            'title': snippet['title'],
-            'uploader': snippet['channelTitle'],
-            'duration': content_details['duration'],
-            'thumbnail': snippet['thumbnails']['high']['url'],
-            'description': snippet['description']
-        })
-
+        return {
+            'songCount': len(song_info),
+            'songInfo': song_info
+        }
     except HttpError as e:
         logging.error(f"YouTube API error: {str(e)}")
-        return jsonify({'error': f'YouTube API error: {str(e)}'}), 400
+        return {'error': f'YouTube API error: {str(e)}'}
+
+def extract_playlist_id(url):
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.hostname in ('youtube.com', 'www.youtube.com', 'music.youtube.com'):
+        query = urllib.parse.parse_qs(parsed_url.query)
+        return query.get('list', [None])[0]
+    return None
 
 @app.route('/playlist', methods=['GET'])
 def playlist_info_endpoint():
@@ -172,6 +116,7 @@ def playlist_info_endpoint():
         with open('api/links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
+        logging.error(f"Failed to read links.txt: {str(e)}")
         return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
@@ -179,9 +124,15 @@ def playlist_info_endpoint():
 
     all_songs_info = []
     for playlist_url in playlist_urls:
-        result = get_audio_info(playlist_url)
-        if isinstance(result, dict) and 'songInfo' in result:
-            all_songs_info.extend(result['songInfo'])
+        playlist_id = extract_playlist_id(playlist_url)
+        if playlist_id:
+            result = get_playlist_info(playlist_id)
+            if isinstance(result, dict) and 'songInfo' in result:
+                all_songs_info.extend(result['songInfo'])
+            elif 'error' in result:
+                logging.error(f"Error processing playlist {playlist_url}: {result['error']}")
+        else:
+            logging.error(f"Invalid playlist URL: {playlist_url}")
 
     return jsonify({
         'songCount': len(all_songs_info),
