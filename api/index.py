@@ -1,4 +1,4 @@
-from flask import Flask, Response, jsonify, request
+from flask import Flask, jsonify, redirect, request
 import logging
 import re
 import json
@@ -123,14 +123,12 @@ def validate_youtube_url(video_url):
             return None, "Video not found"
 
         return video_id, None
-    except HttpError as e:
-        return None, f"HTTP error occurred: {e}"
     except Exception as e:
         return None, f"Error validating URL: {e}"
 
 
-def fetch_audio_stream(video_url):
-    """Fetches the audio stream URL using yt-dlp."""
+def fetch_audio_url(video_url):
+    """Fetches the direct audio stream URL using yt-dlp."""
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
@@ -145,42 +143,24 @@ def fetch_audio_stream(video_url):
         return None, str(e)
 
 
-def stream_audio(audio_url):
-    """Streams audio from a URL and converts it to a playable format."""
-    try:
-        audio_response = requests.get(audio_url, stream=True)
-        audio = AudioSegment.from_file(BytesIO(audio_response.content))
-        buffer = BytesIO()
-        audio.export(buffer, format="mp3")
-        buffer.seek(0)
-        return buffer, None
-    except Exception as e:
-        return None, str(e)
-
-
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    # Step 1: Validate the URL with YouTube Data API
+    # Step 1: Validate YouTube URL
     video_id, error = validate_youtube_url(video_url)
     if error:
         return jsonify({'error': error}), 400
 
-    # Step 2: Fetch the audio stream
-    audio_url, error = fetch_audio_stream(video_url)
+    # Step 2: Fetch Audio URL
+    audio_url, error = fetch_audio_url(video_url)
     if error:
         return jsonify({'error': f"Failed to fetch audio stream: {error}"}), 500
 
-    # Step 3: Stream and convert the audio
-    audio_buffer, error = stream_audio(audio_url)
-    if error:
-        return jsonify({'error': f"Failed to process audio: {error}"}), 500
-
-    # Step 4: Serve the audio as a stream
-    return Response(audio_buffer, mimetype="audio/mp3")
+    # Step 3: Redirect to the Audio URL
+    return redirect(audio_url, code=302)
     
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
