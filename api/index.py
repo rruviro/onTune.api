@@ -75,14 +75,14 @@ def extract_playlist_id(url):
 @app.route('/playlist', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('links.txt', 'r') as file:
+        with open('api/links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
-        logging.error(f"Failed to read links.txt: {str(e)}")
-        return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
+        logging.error(f"Failed to read api/links.txt: {str(e)}")
+        return jsonify({'error': f'Failed to read api/links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in links.txt'}), 400
+        return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
