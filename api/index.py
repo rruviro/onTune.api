@@ -9,13 +9,14 @@ import urllib.parse
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
+import google.auth
 from urllib.parse import urlparse, parse_qs
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 # Use the API key directly
-API_KEY = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
+API_KEY = 'AIzaSyCS0pKbLr2CmaxsQmHBerQnfkD8f8hZ8w4'
 # Build the YouTube client
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 
@@ -100,28 +101,7 @@ def playlist_info_endpoint():
     })
 
 
-def clean_title_and_writer(title, writer):
-    """Clean and preprocess title and writer for better display."""
-    def remove_parentheses(text):
-        return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
-
-    def remove_symbols(text):
-        return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
-
-    def remove_text_before_dash(text):
-        return text.split("-", 1)[-1].lstrip() if "-" in text else text
-
-    def remove_writer_from_title(title, writer):
-        writer_escaped = re.escape(writer)
-        return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
-
-    title = remove_parentheses(title)
-    writer = remove_parentheses(writer)
-    title = remove_text_before_dash(title)
-    title = remove_writer_from_title(title, writer)
-    title = remove_symbols(title)
-
-    return title, writer
+YOUTUBE_API_KEY = 'AIzaSyCS0pKbLr2CmaxsQmHBerQnfkD8f8hZ8w4'
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -138,7 +118,7 @@ def get_audio():
         return jsonify(audio_info)
     except yt_dlp.utils.DownloadError as e:
         print(f"Video unavailable: {str(e)}")
-        return jsonify({'error': 'Video unavailable or restricted'}), 400
+        return jsonify({'error': 'Video unavailable or restricted. This video might be region-blocked, age-restricted, or removed from YouTube.'}), 400
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({'error': f'Error processing request: {str(e)}'}), 500
@@ -176,61 +156,6 @@ def extract_audio_stream(video_url):
             'writer': info_dict.get('uploader', 'Unknown Uploader'),
             'duration': info_dict.get('duration', 0)  # Duration in seconds
         }
-        
-def fetch_video_metadata(video_id):
-    """Fetch video metadata using YouTube Data API."""
-    # Simulate fetching metadata. Replace with real YouTube Data API usage.
-    try:
-        # Mock response (Replace with actual YouTube API calls)
-        response = {
-            'items': [{
-                'snippet': {
-                    'title': 'Sample Video Title',
-                    'channelTitle': 'Sample Channel'
-                },
-                'contentDetails': {
-                    'duration': 'PT4M20S'
-                }
-            }]
-        }
-
-        if not response['items']:
-            return None
-
-        snippet = response['items'][0]['snippet']
-        content_details = response['items'][0]['contentDetails']
-
-        return {
-            'title': snippet['title'],
-            'uploader': snippet['channelTitle'],
-            'duration': content_details['duration']
-        }
-    except Exception as e:
-        print(f"YouTube API error: {str(e)}")
-        return None
-
-
-def get_audio_info(video_id, metadata):
-    """Generate audio stream URL and metadata, fallback for restricted videos."""
-    # Check if video is embeddable
-    try:
-        audio_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1"
-    except ValueError:
-        # Fallback: Use the direct YouTube URL
-        audio_url = f"https://www.youtube.com/watch?v={video_id}"
-
-    title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
-
-    return {
-        'audioUrl': audio_url,
-        'title': title,
-        'writer': writer,
-        'duration': metadata['duration']
-    }
-
-def clean_title_and_writer(title, writer):
-    """Clean and format title and writer strings."""
-    return title.strip(), writer.strip()
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
