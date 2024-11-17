@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 import logging
 import re
 import json
+import googleapiclient
 import requests
 from bs4 import BeautifulSoup
 import yt_dlp
@@ -74,14 +75,14 @@ def extract_playlist_id(url):
 @app.route('/playlist', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('api/links.txt', 'r') as file:
+        with open('links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
-        logging.error(f"Failed to read api/links.txt: {str(e)}")
-        return jsonify({'error': f'Failed to read api/links.txt: {str(e)}'}), 500
+        logging.error(f"Failed to read links.txt: {str(e)}")
+        return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
+        return jsonify({'error': 'No playlist URLs found in links.txt'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
@@ -102,6 +103,8 @@ def playlist_info_endpoint():
 
 
 YOUTUBE_API_KEY = 'AIzaSyCS0pKbLr2CmaxsQmHBerQnfkD8f8hZ8w4'
+# Initialize the YouTube Data API client
+youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -111,17 +114,79 @@ def get_audio():
 
     print(f"Received video URL: {video_url}")
 
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        return jsonify({'error': 'Invalid YouTube URL'}), 400
+
     try:
+        # Fetch video metadata using the YouTube Data API
+        metadata = fetch_video_metadata(video_id)
+        if not metadata:
+            return jsonify({'error': 'Unable to fetch video metadata or video is unavailable'}), 400
+        
+        print(f"Video Metadata: {metadata}")
+        
+        # Check if video is embeddable or restricted
+        if not metadata.get('is_embeddable', False):
+            print("Video is not embeddable, but audio extraction will continue.")
+        
+        # Check if video is available before attempting to extract audio
+        if not is_video_available(metadata):
+            return jsonify({'error': 'Video is unavailable or restricted'}), 400
+
         # Extract audio info using yt-dlp
         audio_info = extract_audio_stream(video_url)
         print(f"Extracted Audio Info: {audio_info}")
         return jsonify(audio_info)
-    except yt_dlp.utils.DownloadError as e:
-        print(f"Video unavailable: {str(e)}")
-        return jsonify({'error': 'Video unavailable or restricted. This video might be region-blocked, age-restricted, or removed from YouTube.'}), 400
+    
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({'error': f'Error processing request: {str(e)}'}), 500
+
+
+def extract_video_id(video_url):
+    """Extract video ID from YouTube URL."""
+    if "youtube.com/watch?v=" in video_url:
+        video_id = video_url.split("v=")[-1]
+        return video_id
+    elif "youtu.be/" in video_url:
+        video_id = video_url.split("/")[-1]
+        return video_id
+    return None
+
+
+def fetch_video_metadata(video_id):
+    """Fetch video metadata using YouTube Data API."""
+    try:
+        request = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=video_id
+        )
+        response = request.execute()
+
+        if not response.get('items'):
+            return None
+
+        snippet = response['items'][0]['snippet']
+        content_details = response['items'][0]['contentDetails']
+
+        return {
+            'title': snippet['title'],
+            'uploader': snippet['channelTitle'],
+            'duration': content_details['duration'],
+            'is_embeddable': snippet.get('embeddable', False),  # Check if the video is embeddable
+            'availability': response['items'][0].get('status', {}).get('uploadStatus', 'processed')  # Check availability
+        }
+    
+    except googleapiclient.errors.HttpError as e:
+        print(f"YouTube API error: {str(e)}")
+        return None
+
+
+def is_video_available(metadata):
+    """Check if video is available (not deleted, private, or restricted)."""
+    # Ensure availability status is processed (uploaded and not deleted)
+    return metadata.get('availability') == 'processed'
 
 
 def extract_audio_stream(video_url):
@@ -156,6 +221,7 @@ def extract_audio_stream(video_url):
             'writer': info_dict.get('uploader', 'Unknown Uploader'),
             'duration': info_dict.get('duration', 0)  # Duration in seconds
         }
+
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
