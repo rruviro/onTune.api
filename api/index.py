@@ -6,16 +6,16 @@ import requests
 from bs4 import BeautifulSoup
 import yt_dlp
 import urllib.parse
-from pydub import AudioSegment
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import os
+from urllib.parse import urlparse, parse_qs
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 # Use the API key directly
-API_KEY = 'AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw'
+API_KEY = 'AIzaSyC_dbpXvWmDjWCAjM1VLrgJFwyeaQPnGyg'
 # Build the YouTube client
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 
@@ -73,14 +73,14 @@ def extract_playlist_id(url):
 @app.route('/playlist', methods=['GET'])
 def playlist_info_endpoint():
     try:
-        with open('api/links.txt', 'r') as file:
+        with open('links.txt', 'r') as file:
             playlist_urls = [line.strip() for line in file.readlines()]
     except Exception as e:
-        logging.error(f"Failed to read api/links.txt: {str(e)}")
-        return jsonify({'error': f'Failed to read api/links.txt: {str(e)}'}), 500
+        logging.error(f"Failed to read links.txt: {str(e)}")
+        return jsonify({'error': f'Failed to read links.txt: {str(e)}'}), 500
 
     if not playlist_urls:
-        return jsonify({'error': 'No playlist URLs found in api/links.txt'}), 400
+        return jsonify({'error': 'No playlist URLs found in links.txt'}), 400
 
     all_songs_info = []
     for playlist_url in playlist_urls:
@@ -98,77 +98,30 @@ def playlist_info_endpoint():
         'songCount': len(all_songs_info),
         'songInfo': all_songs_info
     })
-    
 
-# Your YouTube API key
-YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
 
-def remove_parentheses(text):
-    """Removes any text within parentheses from a string."""
-    return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
+def clean_title_and_writer(title, writer):
+    """Clean and preprocess title and writer for better display."""
+    def remove_parentheses(text):
+        return re.sub(r'\s*\(.*?\)\s*', '', text).strip()
 
-def remove_symbols(text):
-    """Removes most symbols, retaining only alphanumeric characters and spaces."""
-    return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
+    def remove_symbols(text):
+        return re.sub(r'[^A-Za-z0-9 ]', '', text).strip()
 
-def remove_text_before_dash(text):
-    """Removes any text before the first dash, including the dash, and removes any space after the dash."""
-    return text.split("-", 1)[-1].lstrip() if "-" in text else text
+    def remove_text_before_dash(text):
+        return text.split("-", 1)[-1].lstrip() if "-" in text else text
 
-def remove_writer_from_title(title, writer):
-    """Removes the writer's name from the title if it appears within it."""
-    writer_escaped = re.escape(writer)
-    return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
+    def remove_writer_from_title(title, writer):
+        writer_escaped = re.escape(writer)
+        return re.sub(r'\b' + writer_escaped + r'\b', '', title).strip()
 
-def get_lyrics_from_genius(writer, title):
-    """Fetch lyrics from Genius based on song title and artist."""
-    writer = writer.replace(" ", "-").capitalize()  # Format writer
-    title = title.replace(" ", "-")  # Format title
-    search_url = f"https://genius.com/{writer}-{title}-lyrics"
+    title = remove_parentheses(title)
+    writer = remove_parentheses(writer)
+    title = remove_text_before_dash(title)
+    title = remove_writer_from_title(title, writer)
+    title = remove_symbols(title)
 
-    try:
-        response = requests.get(search_url)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        lyrics_div = soup.find('div', class_='Lyrics__Container-sc-1ynbvzw-1 kUgSbL')
-        if lyrics_div:
-            lyrics = BeautifulSoup(str(lyrics_div), 'html.parser').get_text("\n", strip=True)
-            lyrics = re.sub(r'\[.*?\]', '', lyrics)  # Remove text inside brackets
-            return lyrics
-        else:
-            return 'Lyrics not found in the expected location.'
-    except requests.exceptions.HTTPError as http_err:
-        if response.status_code == 404:
-            return f"Lyrics not found for {writer} - {title} (404 Error)"
-        return f"HTTP error occurred: {http_err}"
-    except Exception as e:
-        return f"Error fetching lyrics: {str(e)}"
-
-YOUTUBE_API_KEY = "AIzaSyAAgsgw39IjWMRIRFvJZpFj0oQF3_Yb5sw"
-
-def fetch_audio_stream(video_url):
-    """Fetch the audio stream URL using yt-dlp."""
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'outtmpl': 'downloads/%(id)s.%(ext)s',  # Optional: Specify output template
-        'noplaylist': True,  # Make sure it's a single video, not a playlist
-    }
-    try:
-        # Extracting info using yt-dlp
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=False)
-            if 'url' in info_dict:
-                audio_url = info_dict['url']
-                return audio_url
-            else:
-                raise ValueError("Audio stream URL not found")
-    except yt_dlp.utils.DownloadError as e:
-        print(f"yt-dlp download error: {e}")
-        return None
-    except Exception as e:
-        print(f"Error fetching audio stream: {e}")  # Log the error for debugging
-        return None
+    return title, writer
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
@@ -176,54 +129,108 @@ def get_audio():
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
 
-    # Fetch video metadata
-    video_metadata = fetch_video_metadata(video_url)
-    if "error" in video_metadata:
-        return jsonify({'error': video_metadata['error']}), 500
-
-    # Clean and process the video title
-    title = remove_parentheses(video_metadata["title"])
-    writer = remove_parentheses(video_metadata["uploader"])
-    title = remove_text_before_dash(title)
-    title = remove_writer_from_title(title, writer)
-    title = remove_symbols(title)
-
-    # Fetch lyrics from Genius
-    lyrics = get_lyrics_from_genius(writer, title)
-
-    # Fetch audio stream URL
-    audio_stream_url = fetch_audio_stream(video_url)
-
-    if not audio_stream_url:
-        return jsonify({'error': 'Failed to fetch audio stream'}), 500
-
-    # Return response with the required data
-    return jsonify({
-        "title": title,
-        "writer": writer,
-        "lyrics": lyrics,
-        "audioUrl": audio_stream_url
-    })
-
-def fetch_video_metadata(video_url):
-    """Fetch video metadata using the YouTube Data API."""
-    video_id = video_url.split("v=")[-1] if "v=" in video_url else video_url.split("/")[-1]
-    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
+    print(f"Received video URL: {video_url}")
 
     try:
-        response = requests.get(api_url)
-        response.raise_for_status()
-        video_data = response.json()
-
-        if "items" in video_data and len(video_data["items"]) > 0:
-            snippet = video_data["items"][0]["snippet"]
-            title = snippet.get("title", "Unknown Title")
-            uploader = snippet.get("channelTitle", "Unknown Uploader")
-            return {"title": title, "uploader": uploader}
-        else:
-            return {"error": "Video not found"}
+        # Extract audio info using yt-dlp
+        audio_info = extract_audio_stream(video_url)
+        print(f"Extracted Audio Info: {audio_info}")
+        return jsonify(audio_info)
+    except yt_dlp.utils.DownloadError as e:
+        print(f"Video unavailable: {str(e)}")
+        return jsonify({'error': 'Video unavailable or restricted'}), 400
     except Exception as e:
-        return {"error": str(e)}
-    
+        print(f"Error: {str(e)}")
+        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
+
+
+def extract_audio_stream(video_url):
+    """Extract audio stream URL and metadata using yt-dlp."""
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'skip_download': True,
+        'no_warnings': True,
+        'extract_flat': False
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            # Attempt to fetch video information
+            info_dict = ydl.extract_info(video_url, download=False)
+            print(f"Video info fetched successfully: {info_dict}")
+        except yt_dlp.utils.DownloadError as e:
+            print(f"DownloadError: {str(e)}")
+            raise
+
+        # Find the best audio stream
+        audio_url = next(
+            (f['url'] for f in info_dict['formats'] if f['ext'] in ['m4a', 'mp3', 'webm']), None
+        )
+        if not audio_url:
+            raise ValueError("No audio stream found")
+
+        return {
+            'audioUrl': audio_url,
+            'title': info_dict.get('title', 'Unknown Title'),
+            'writer': info_dict.get('uploader', 'Unknown Uploader'),
+            'duration': info_dict.get('duration', 0)  # Duration in seconds
+        }
+        
+def fetch_video_metadata(video_id):
+    """Fetch video metadata using YouTube Data API."""
+    # Simulate fetching metadata. Replace with real YouTube Data API usage.
+    try:
+        # Mock response (Replace with actual YouTube API calls)
+        response = {
+            'items': [{
+                'snippet': {
+                    'title': 'Sample Video Title',
+                    'channelTitle': 'Sample Channel'
+                },
+                'contentDetails': {
+                    'duration': 'PT4M20S'
+                }
+            }]
+        }
+
+        if not response['items']:
+            return None
+
+        snippet = response['items'][0]['snippet']
+        content_details = response['items'][0]['contentDetails']
+
+        return {
+            'title': snippet['title'],
+            'uploader': snippet['channelTitle'],
+            'duration': content_details['duration']
+        }
+    except Exception as e:
+        print(f"YouTube API error: {str(e)}")
+        return None
+
+
+def get_audio_info(video_id, metadata):
+    """Generate audio stream URL and metadata, fallback for restricted videos."""
+    # Check if video is embeddable
+    try:
+        audio_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&mute=1"
+    except ValueError:
+        # Fallback: Use the direct YouTube URL
+        audio_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    title, writer = clean_title_and_writer(metadata['title'], metadata['uploader'])
+
+    return {
+        'audioUrl': audio_url,
+        'title': title,
+        'writer': writer,
+        'duration': metadata['duration']
+    }
+
+def clean_title_and_writer(title, writer):
+    """Clean and format title and writer strings."""
+    return title.strip(), writer.strip()
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
