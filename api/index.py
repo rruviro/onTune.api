@@ -28,7 +28,7 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
     return response
 
-def get_playlist_info(playlist_id):
+def get_playlist_info(playlist_id, playlist_url):
     try:
         playlist_items = []
         next_page_token = None
@@ -47,15 +47,16 @@ def get_playlist_info(playlist_id):
             if not next_page_token:
                 break
 
-        song_info = []
-        for item in playlist_items:
-            video = item['snippet']
-            song_info.append({
-                'title': video['title'],
-                'writer': video['videoOwnerChannelTitle'],
-                'url': f"https://www.youtube.com/watch?v={video['resourceId']['videoId']}",
-                'image_url': video['thumbnails']['high']['url'],
-            })
+        song_info = [
+            {
+                'title': item['snippet']['title'],
+                'writer': item['snippet'].get('videoOwnerChannelTitle', 'Unknown'),
+                'url': f"https://www.youtube.com/watch?v={item['snippet']['resourceId']['videoId']}",
+                'image_url': item['snippet'].get('thumbnails', {}).get('high', {}).get('url', ''),
+                'playlistUrl': playlist_url,  # Include the playlist URL
+            }
+            for item in playlist_items
+        ]
 
         return {
             'songCount': len(song_info),
@@ -88,7 +89,7 @@ def playlist_info_endpoint():
     for playlist_url in playlist_urls:
         playlist_id = extract_playlist_id(playlist_url)
         if playlist_id:
-            result = get_playlist_info(playlist_id)
+            result = get_playlist_info(playlist_id, playlist_url)
             if isinstance(result, dict) and 'songInfo' in result:
                 all_songs_info.extend(result['songInfo'])
             elif 'error' in result:
@@ -100,7 +101,6 @@ def playlist_info_endpoint():
         'songCount': len(all_songs_info),
         'songInfo': all_songs_info
     })
-
 
 YOUTUBE_API_KEY = 'AIzaSyCS0pKbLr2CmaxsQmHBerQnfkD8f8hZ8w4'
 # Initialize the YouTube Data API client
