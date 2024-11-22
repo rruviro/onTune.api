@@ -51,11 +51,10 @@ def get_playlist_info(playlist_id):
         for item in playlist_items:
             video = item['snippet']
             song_info.append({
-                'title': entry['title'], 
-                'writer': entry.get('uploader') or entry.get('artist') or entry.get('creator', 'Unknown'),
-                'url': f"https://www.youtube.com/watch?v={entry['id']}",
-                'image_url': entry.get('thumbnails', [{}])[-1].get('url', ''),  # Get highest resolution thumbnail URL
-                'playlistUrl': playlist_url  # Add the playlist URL to each song
+                'title': video['title'],
+                'writer': video['videoOwnerChannelTitle'],
+                'url': f"https://www.youtube.com/watch?v={video['resourceId']['videoId']}",
+                'image_url': video['thumbnails']['high']['url'],
             })
 
         return {
