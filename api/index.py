@@ -186,7 +186,10 @@ def extract_audio_stream(video_url):
         'quiet': True,
         'skip_download': True,
         'no_warnings': True,
-        'extract_flat': False
+        'extract_flat': False,
+        'headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
