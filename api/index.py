@@ -92,129 +92,73 @@ def playlist_info_endpoint():
         'songInfo': all_songs_info
     })
 
-YOUTUBE_API_KEY = 'AIzaSyCS0pKbLr2CmaxsQmHBerQnfkD8f8hZ8w4'
+YOUTUBE_API_KEY = 'AIzaSyC5ypUn4Wg8kZ_9Q2k6PTa2FBKq6aChZcc'
 # Initialize the YouTube Data API client
 youtube = googleapiclient.discovery.build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+
+def extract_video_id(video_url):
+    parsed_url = urlparse(video_url)
+    if "youtube.com" in video_url:
+        return parse_qs(parsed_url.query).get("v", [None])[0]
+    elif "youtu.be" in video_url:
+        return parsed_url.path.lstrip("/")
+    return None
+
+def fetch_video_metadata(video_id):
+    try:
+        response = youtube.videos().list(part="snippet,contentDetails,status", id=video_id).execute()
+        if not response.get('items'):
+            return None
+        item = response['items'][0]
+        return {
+            'title': item['snippet']['title'],
+            'uploader': item['snippet']['channelTitle'],
+            'duration': item['contentDetails']['duration'],
+            'is_embeddable': item['status'].get('embeddable', True),
+            'availability': item['status']['uploadStatus'],
+            'privacyStatus': item['status'].get('privacyStatus', 'public'),
+        }
+    except Exception as e:
+        print(f"YouTube API error: {e}")
+        return None
+
+def extract_audio_stream(video_url):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+        audio_url = next((f['url'] for f in info['formats'] if f['ext'] in ['m4a', 'mp3', 'webm']), None)
+        if not audio_url:
+            raise ValueError("No audio stream found")
+        return {
+            'audioUrl': audio_url,
+            'title': info.get('title', 'Unknown Title'),
+            'uploader': info.get('uploader', 'Unknown Uploader'),
+            'duration': info.get('duration', 0),
+        }
 
 @app.route('/get-audio', methods=['GET'])
 def get_audio():
     video_url = request.args.get('url')
     if not video_url:
         return jsonify({'error': 'Missing video URL parameter'}), 400
-
-    print(f"Received video URL: {video_url}")
-
+    
     video_id = extract_video_id(video_url)
     if not video_id:
         return jsonify({'error': 'Invalid YouTube URL'}), 400
-
+    
+    metadata = fetch_video_metadata(video_id)
+    if not metadata or metadata.get('privacyStatus') != 'public':
+        return jsonify({'error': 'Video is unavailable or restricted'}), 400
+    
     try:
-        # Fetch video metadata using the YouTube Data API
-        metadata = fetch_video_metadata(video_id)
-        if not metadata:
-            return jsonify({'error': 'Unable to fetch video metadata or video is unavailable'}), 400
-        
-        print(f"Video Metadata: {metadata}")
-        
-        # Check if video is embeddable or restricted
-        if not metadata.get('is_embeddable', False):
-            print("Video is not embeddable, but audio extraction will continue.")
-        
-        # Check if video is available before attempting to extract audio
-        if not is_video_available(metadata):
-            return jsonify({'error': 'Video is unavailable or restricted'}), 400
-
-        # Extract audio info using yt-dlp
         audio_info = extract_audio_stream(video_url)
-        print(f"Extracted Audio Info: {audio_info}")
         return jsonify(audio_info)
-    
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
-
-
-def extract_video_id(video_url):
-    """Extract video ID from YouTube URL."""
-    if "youtube.com/watch?v=" in video_url:
-        video_id = video_url.split("v=")[-1]
-        return video_id
-    elif "youtu.be/" in video_url:
-        video_id = video_url.split("/")[-1]
-        return video_id
-    return None
-
-
-def fetch_video_metadata(video_id):
-    """Fetch video metadata using YouTube Data API."""
-    try:
-        request = youtube.videos().list(
-            part="snippet,contentDetails",
-            id=video_id
-        )
-        response = request.execute()
-
-        if not response.get('items'):
-            return None
-
-        snippet = response['items'][0]['snippet']
-        content_details = response['items'][0]['contentDetails']
-
-        return {
-            'title': snippet['title'],
-            'uploader': snippet['channelTitle'],
-            'duration': content_details['duration'],
-            'is_embeddable': snippet.get('embeddable', False),  # Check if the video is embeddable
-            'availability': response['items'][0].get('status', {}).get('uploadStatus', 'processed')  # Check availability
-        }
-    
-    except googleapiclient.errors.HttpError as e:
-        print(f"YouTube API error: {str(e)}")
-        return None
-
-
-def is_video_available(metadata):
-    """Check if video is available (not deleted, private, or restricted)."""
-    # Ensure availability status is processed (uploaded and not deleted)
-    return metadata.get('availability') == 'processed'
-
-
-def extract_audio_stream(video_url):
-    """Extract audio stream URL and metadata using yt-dlp."""
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'skip_download': True,
-        'no_warnings': True,
-        'extract_flat': False,
-        'headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Attempt to fetch video information
-            info_dict = ydl.extract_info(video_url, download=False)
-            print(f"Video info fetched successfully: {info_dict}")
-        except yt_dlp.utils.DownloadError as e:
-            print(f"DownloadError: {str(e)}")
-            raise
-
-        # Find the best audio stream
-        audio_url = next(
-            (f['url'] for f in info_dict['formats'] if f['ext'] in ['m4a', 'mp3', 'webm']), None
-        )
-        if not audio_url:
-            raise ValueError("No audio stream found")
-
-        return {
-            'audioUrl': audio_url,
-            'title': info_dict.get('title', 'Unknown Title'),
-            'writer': info_dict.get('uploader', 'Unknown Uploader'),
-            'duration': info_dict.get('duration', 0)  # Duration in seconds
-        }
-
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
